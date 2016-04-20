@@ -3,6 +3,7 @@
 
 #include "hphp/runtime/ext/extension.h"
 #include <postgresql/libpq-fe.h>
+#include "enigma-common.h"
 
 namespace HPHP {
 namespace Pgsql {

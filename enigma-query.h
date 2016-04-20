@@ -4,13 +4,12 @@
 #include "hphp/runtime/ext/extension.h"
 #include "hphp/runtime/ext/asio/socket-event.h"
 #include "hphp/runtime/ext/asio/asio-external-thread-event.h"
+#include "enigma-common.h"
 #include "pgsql-connection.h"
 #include "pgsql-result.h"
 
 namespace HPHP {
 namespace Enigma {
-
-#define ENIGMA_ME(cn,fn) Native::registerBuiltinFunction("Enigma\\" #cn "->" #fn, HHVM_MN(cn,fn))
 
 class Query {
 public:

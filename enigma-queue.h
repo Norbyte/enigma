@@ -2,6 +2,7 @@
 #define HPHP_ENIGMA_QUEUE_H
 
 #include "hphp/runtime/ext/extension.h"
+#include "enigma-common.h"
 #include "enigma-query.h"
 
 namespace HPHP {

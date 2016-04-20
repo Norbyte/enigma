@@ -50,7 +50,6 @@ ConnectionResource::~ConnectionResource() {
  * Poll libpq so that it can proceed with the connection sequence.
  */
 ConnectionResource::PollingStatus ConnectionResource::pollConnection() {
-    // LOG(INFO) << "PQconnectPoll()";
     switch (PQconnectPoll(connection_)) {
         case PGRES_POLLING_FAILED:  return PollingStatus::Failed;
         case PGRES_POLLING_READING: return PollingStatus::Reading;
@@ -65,7 +64,7 @@ ConnectionResource::PollingStatus ConnectionResource::pollConnection() {
  * Reset the communication channel to the server, in a nonblocking manner.
  */
 void ConnectionResource::resetStart() {
-    LOG(INFO) << "PQresetStart()";
+    ENIG_DEBUG("PQresetStart()");
     if (PQresetStart(connection_) != 1) {
         throw EnigmaException(std::string("Failed to reset connection: ") + errorMessage());
     }
@@ -75,7 +74,7 @@ void ConnectionResource::resetStart() {
  * Poll libpq so that it can proceed with the reset sequence.
  */
 ConnectionResource::PollingStatus ConnectionResource::pollReset() {
-    LOG(INFO) << "PQresetPoll()";
+    ENIG_DEBUG("PQresetPoll()");
     switch (PQresetPoll(connection_)) {
         case PGRES_POLLING_FAILED:  return PollingStatus::Failed;
         case PGRES_POLLING_READING: return PollingStatus::Reading;
@@ -90,7 +89,7 @@ ConnectionResource::PollingStatus ConnectionResource::pollReset() {
  * Returns the status of the connection.
  */
 ConnectionResource::Status ConnectionResource::status() const {
-    LOG(INFO) << "PQstatus()";
+    ENIG_DEBUG("PQstatus()");
     switch (PQstatus(connection_)) {
         case CONNECTION_OK:  return Status::Ok;
         case CONNECTION_BAD: return Status::Bad;
@@ -104,7 +103,7 @@ ConnectionResource::Status ConnectionResource::status() const {
  * Returns the current in-transaction status of the server.
  */
 ConnectionResource::TransactionStatus ConnectionResource::transactionStatus() const {
-    LOG(INFO) << "PQtransactionStatus()";
+    ENIG_DEBUG("PQtransactionStatus()");
     switch (PQtransactionStatus(connection_)) {
         case PQTRANS_IDLE:    return TransactionStatus::Idle;
         case PQTRANS_ACTIVE:  return TransactionStatus::Active;
@@ -165,7 +164,7 @@ int ConnectionResource::backendPid() const {
  * Submits a command to the server without waiting for the result(s).
  */
 void ConnectionResource::sendQuery(String const & command) {
-    LOG(INFO) << "PQsendQuery()";
+    ENIG_DEBUG("PQsendQuery()");
     if (PQsendQuery(connection_, command.c_str()) != 1) {
         throw EnigmaException(std::string("Failed to send query: ") + errorMessage());
     }
@@ -175,7 +174,7 @@ void ConnectionResource::sendQuery(String const & command) {
  * Submits a command and separate parameters to the server without waiting for the result(s).
  */
 void ConnectionResource::sendQueryParams(String const & command, PreparedParameters const & params) {
-    LOG(INFO) << "PQsendQueryParams()";
+    ENIG_DEBUG("PQsendQueryParams()");
     if (PQsendQueryParams(connection_, command.c_str(), params.count(), nullptr, params.buffer(), nullptr, nullptr, 0) != 1) {
         throw EnigmaException(std::string("Failed to send query: ") + errorMessage());
     }
@@ -185,7 +184,7 @@ void ConnectionResource::sendQueryParams(String const & command, PreparedParamet
  * Sends a request to create a prepared statement with the given parameters, without waiting for completion.
  */
 void ConnectionResource::sendPrepare(String const & command, String const & stmtName, int numParams) {
-    LOG(INFO) << "PQsendPrepare()";
+    ENIG_DEBUG("PQsendPrepare()");
     if (PQsendPrepare(connection_, command.c_str(), stmtName.c_str(), numParams, nullptr) != 1) {
         throw EnigmaException(std::string("Failed to prepare statement: ") + errorMessage());
     }
@@ -195,7 +194,7 @@ void ConnectionResource::sendPrepare(String const & command, String const & stmt
  * Sends a request to execute a prepared statement with given parameters, without waiting for the result(s).
  */
 void ConnectionResource::sendQueryPrepared(String const & stmtName, PreparedParameters const & params) {
-    LOG(INFO) << "PQsendQueryPrepared()";
+    ENIG_DEBUG("PQsendQueryPrepared()");
     if (PQsendQueryPrepared(connection_, stmtName.c_str(), params.count(), params.buffer(), nullptr, nullptr, 0) != 1) {
         throw EnigmaException(std::string("Failed to send prepared query: ") + errorMessage());
     }
@@ -205,7 +204,7 @@ void ConnectionResource::sendQueryPrepared(String const & stmtName, PreparedPara
  * Submits a request to obtain information about the specified prepared statement, without waiting for completion.
  */
 void ConnectionResource::sendDescribePrepared(String const & stmtName) {
-    LOG(INFO) << "PQsendDescribePrepared()";
+    ENIG_DEBUG("PQsendDescribePrepared()");
     if (PQsendDescribePrepared(connection_, stmtName.c_str()) != 1) {
         throw EnigmaException(std::string("Failed to describe prepared statement: ") + errorMessage());
     }
@@ -217,7 +216,7 @@ void ConnectionResource::sendDescribePrepared(String const & stmtName) {
  * A null pointer is returned when the command is complete and there will be no more results.
  */
 std::unique_ptr<ResultResource> ConnectionResource::getResult() {
-    LOG(INFO) << "PQgetResult()";
+    ENIG_DEBUG("PQgetResult()");
     auto result = PQgetResult(connection_);
     if (result == nullptr) {
         return std::unique_ptr<ResultResource>();
@@ -241,7 +240,6 @@ std::unique_ptr<ResultResource> ConnectionResource::getResult() {
  * Returns false if a command is busy, that is, getResult() would block waiting for input
  */
 bool ConnectionResource::consumeInput() {
-    // LOG(INFO) << "PQconsumeInput()";
     if (PQconsumeInput(connection_) != 1) {
         throw EnigmaException(std::string("Failed to process server response: ") + errorMessage());
     }
@@ -255,7 +253,7 @@ bool ConnectionResource::consumeInput() {
  * Returns true if successful, or false if it was unable to send all the data in the send queue yet.
  */
 bool ConnectionResource::flush() {
-    LOG(INFO) << "flush()";
+    ENIG_DEBUG("flush()");
     switch (PQflush(connection_)) {
         case 0:
             return true;
@@ -269,7 +267,7 @@ bool ConnectionResource::flush() {
 void ConnectionResource::cancel() {
     char errbuf[256];
     auto cancel = PQgetCancel(connection_);
-    LOG(INFO) << "PQcancel()";
+    ENIG_DEBUG("PQcancel()");
     bool canceled = PQcancel(cancel, errbuf, sizeof(errbuf)) == 1;
     PQfreeCancel(cancel);
     if (!canceled) {
@@ -311,7 +309,7 @@ void ConnectionResource::beginConnection(Array const & params) {
     pg_keys[i] = nullptr;
     pg_values[i] = nullptr;
 
-    LOG(INFO) << "PQconnectStartParams()";
+    ENIG_DEBUG("PQconnectStartParams()");
     connection_ = PQconnectStartParams(pg_keys.data(), pg_values.data(), 0);
     if (connection_ == nullptr) {
         throw EnigmaException("Failed to initialize pgsql connection");

@@ -124,7 +124,7 @@ std::tuple<std::string, unsigned> PlanInfo::parseNumberedParameters() const {
     }
 
     rewritten.write(command.data() + lastWrittenPos, command.length() - lastWrittenPos);
-    LOG(INFO) << rewritten.str();
+    ENIG_DEBUG(rewritten.str());
     return std::make_tuple(rewritten.str(), numParams);
 }
 
@@ -201,7 +201,7 @@ QueryAwait * Pool::enqueue(p_Query query) {
     }
 
     bool shouldExecute = queue_.empty() && !idleConnections_.empty();
-    LOG(INFO) << "create QueryAwait";
+    ENIG_DEBUG("Pool::enqueue(): create QueryAwait");
     auto event = new QueryAwait(std::move(query));
     queue_.push(event);
 
@@ -225,7 +225,7 @@ unsigned Pool::assignConnectionId() {
 }
 
 void Pool::executeNext() {
-    LOG(INFO) << "Pool::executeNext";
+    ENIG_DEBUG("Pool::executeNext");
     always_assert(!queue_.empty());
 
     auto connectionId = assignConnectionId();
@@ -239,7 +239,7 @@ void Pool::executeNext() {
 }
 
 void Pool::queryCompleted(unsigned connectionId) {
-    LOG(INFO) << "Pool::queryCompleted";
+    ENIG_DEBUG("Pool::queryCompleted");
     idleConnections_.push_back(connectionId);
     if (!queue_.empty()) {
         executeNext();

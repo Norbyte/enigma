@@ -40,7 +40,7 @@ void QueryAwait::assign(sp_Connection connection) {
 }
 
 void QueryAwait::begin(CompletionCallback callback) {
-    LOG(INFO) << "QueryAwait::begin()";
+    ENIG_DEBUG("QueryAwait::begin()");
     always_assert(connection_);
 
     callback_ = callback;
@@ -69,9 +69,6 @@ void QueryAwait::cancel() {
 }
 
 void QueryAwait::socketReady(bool read, bool write) {
-    /*if (read && write) LOG(INFO) << "socket ready RW";
-    else if (read) LOG(INFO) << "socket ready R";
-    else LOG(INFO) << "socket ready W";*/
     connection_->socketReady(read, write);
 
     /*
@@ -82,7 +79,7 @@ void QueryAwait::socketReady(bool read, bool write) {
     }
 
     if (connection_->isConnecting() && socket_ != connection_->socket()) {
-        LOG(INFO) << "pgsql socket num changed";
+        ENIG_DEBUG("QueryAwait::socketReady(): pgsql socket num changed");
         /*
          * When the connection failed, libpq may create a new socket and
          * retry the connection with different options (eg. a non-SSL connection after
@@ -97,7 +94,6 @@ void QueryAwait::socketReady(bool read, bool write) {
          * sockets even if the send buffer is empty (thus creating an infinite
          * amount of write notifications).
          */
-        // LOG(INFO) << "pgsql R/W state changed";
         writing_ = connection_->isWriting();
         auto event = writing_ ? AsioEventHandler::READ_WRITE : AsioEventHandler::READ;
         socketIoHandler_->unregisterHandler();
@@ -106,7 +102,7 @@ void QueryAwait::socketReady(bool read, bool write) {
 }
 
 void QueryAwait::queryCompleted(bool succeeded, std::unique_ptr<Pgsql::ResultResource> result) {
-    LOG(INFO) << "queryCompleted()";
+    ENIG_DEBUG("QueryAwait::queryCompleted()");
     /*
      * There is no need to keep the handler running after the query has
      * completed, as the pgsql connection works strictly in a request -> response
@@ -126,13 +122,12 @@ void QueryAwait::queryCompleted(bool succeeded, std::unique_ptr<Pgsql::ResultRes
 }
 
 void QueryAwait::unserialize(Cell & result) {
-    LOG(INFO) << "Unserialize!";
     if (succeeded_) {
-        LOG(INFO) << "got results!";
+        ENIG_DEBUG("QueryAwait::unserialize() OK");
         auto queryResult = QueryResult::newInstance(std::move(result_));
         cellCopy(make_tv<KindOfObject>(queryResult.detach()), result);
     } else {
-        LOG(INFO) << "got exc!";
+        ENIG_DEBUG("QueryAwait::unserialize() caught error");
         result.m_type = DataType::KindOfNull;
         if (result_) {
             throwEnigmaException(result_->errorMessage().toString().c_str());
@@ -143,7 +138,7 @@ void QueryAwait::unserialize(Cell & result) {
 }
 
 void QueryAwait::attachSocketIoHandler() {
-    LOG(INFO) << "attaching ASIO handler";
+    ENIG_DEBUG("QueryAwait::attachSocketIoHandler()");
     auto eventBase = getSingleton<AsioEventBase>();
     auto handler = std::make_shared<SocketIoHandler>(eventBase.get(), connection_->socket(), this);
     handler->registerHandler(AsioEventHandler::READ_WRITE | AsioEventHandler::PERSIST);
@@ -154,7 +149,7 @@ void QueryAwait::attachSocketIoHandler() {
 
 void QueryAwait::detachSocketIoHandler() {
     if (socketIoHandler_) {
-        LOG(INFO) << "detaching ASIO handler";
+        ENIG_DEBUG("QueryAwait::detachSocketIoHandler()");
         socketIoHandler_->unregisterHandler();
         socketIoHandler_.reset();
     }
@@ -364,7 +359,7 @@ void Connection::beginConnect() {
 
     writing_ = true;
     if (!resource_) {
-        LOG(INFO) << "starting connection";
+        ENIG_DEBUG("Connection::beginConnect()");
         resource_ = std::unique_ptr<Pgsql::ConnectionResource>(
                 new Pgsql::ConnectionResource(options_));
         state_ = State::Connecting;
@@ -409,7 +404,7 @@ void Connection::cancelQuery() {
 }
 
 void Connection::beginQuery() {
-    LOG(INFO) << "starting query";
+    ENIG_DEBUG("Connection::beginQuery()");
     switch (nextQuery_->type()) {
         case Query::Type::Raw:
             resource_->sendQuery(nextQuery_->command());
@@ -454,28 +449,23 @@ void Connection::socketReady(bool read, bool write) {
             break;
 
         case State::Connecting:
-            // LOG(INFO) << "pollConnection()";
             processPollingStatus(resource_->pollConnection());
             break;
 
         case State::Resetting:
-            LOG(INFO) << "pollReset()";
             processPollingStatus(resource_->pollReset());
             break;
 
         case State::Executing:
         {
-            // LOG(INFO) << "exec poll";
             if (write) {
                 if (resource_->flush()) {
-                    LOG(INFO) << "flush() completed";
                     writing_ = false;
                 }
             }
 
             if (read) {
                 if (resource_->consumeInput()) {
-                    LOG(INFO) << "consumeInput() completed";
                     queryCompleted();
                 }
             }
@@ -486,7 +476,7 @@ void Connection::socketReady(bool read, bool write) {
 }
 
 void Connection::queryCompleted() {
-    LOG(INFO) << "exec ok!";
+    ENIG_DEBUG("Connection::queryCompleted()");
     state_ = State::Idle;
     auto result = resource_->getResult();
     if (!result) {
@@ -544,7 +534,7 @@ void Connection::processPollingStatus(Pgsql::ConnectionResource::PollingStatus s
 }
 
 void Connection::connectionOk() {
-    LOG(INFO) << "pgsql connected";
+    ENIG_DEBUG("Connection::connectionOk()");
     state_ = State::Idle;
     if (hasQueuedQuery_) {
         beginQuery();
@@ -552,7 +542,7 @@ void Connection::connectionOk() {
 }
 
 void Connection::connectionDied() {
-    LOG(INFO) << "pgsql connection failed: " << resource_->errorMessage().c_str();
+    ENIG_DEBUG("Connection::connectionDied(): " << resource_->errorMessage().c_str());
     state_ = State::Dead;
     finishQuery(false, nullptr);
 }
