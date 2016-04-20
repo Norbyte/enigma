@@ -2,14 +2,15 @@
 #include "hphp/runtime/vm/native-data.h"
 
 namespace HPHP {
+namespace Enigma {
 
 
-EnigmaPlanInfo::EnigmaPlanInfo(std::string const & cmd)
+PlanInfo::PlanInfo(std::string const & cmd)
         : command(cmd) {
     determineParameterType();
 }
 
-Array EnigmaPlanInfo::mapParameters(Array const & params) {
+Array PlanInfo::mapParameters(Array const & params) {
     if (type == ParameterType::Named) {
         return mapNamedParameters(params);
     } else {
@@ -17,7 +18,7 @@ Array EnigmaPlanInfo::mapParameters(Array const & params) {
     }
 }
 
-Array EnigmaPlanInfo::mapNamedParameters(Array const & params) {
+Array PlanInfo::mapNamedParameters(Array const & params) {
     Array mapped;
     for (unsigned i = 0; i < parameterNameMap.size(); i++) {
         auto key = String(parameterNameMap[i]);
@@ -32,12 +33,12 @@ Array EnigmaPlanInfo::mapNamedParameters(Array const & params) {
     return mapped;
 }
 
-Array EnigmaPlanInfo::mapNumberedParameters(Array const & params) {
+Array PlanInfo::mapNumberedParameters(Array const & params) {
     Array mapped;
     for (unsigned i = 0; i < parameterCount; i++) {
         auto value = params->nvGet(i);
         if (value == nullptr) {
-            throw EnigmaException(std::string("Missing bound parameter: ") + std::to_string(i));
+            throw Exception(std::string("Missing bound parameter: ") + std::to_string(i));
         }
 
         mapped.append(*reinterpret_cast<Variant const *>(value));
@@ -46,12 +47,12 @@ Array EnigmaPlanInfo::mapNumberedParameters(Array const & params) {
     return mapped;
 }
 
-void EnigmaPlanInfo::determineParameterType() {
+void PlanInfo::determineParameterType() {
     auto numbered = parseNumberedParameters();
     auto named = parseNamedParameters();
 
     if (std::get<1>(named).size() > 0 && std::get<1>(numbered) > 0) {
-        throw EnigmaException("Query contains both named and numbered parameters");
+        throw Exception("Query contains both named and numbered parameters");
     }
 
     if (std::get<1>(named).size() > 0) {
@@ -65,7 +66,7 @@ void EnigmaPlanInfo::determineParameterType() {
     }
 }
 
-bool EnigmaPlanInfo::isValidPlaceholder(std::size_t pos) const {
+bool PlanInfo::isValidPlaceholder(std::size_t pos) const {
     // Check if the preceding byte is in [0-9a-zA-Z \r\n\t]
     if (
             pos != 0
@@ -87,7 +88,7 @@ bool EnigmaPlanInfo::isValidPlaceholder(std::size_t pos) const {
     return true;
 }
 
-std::size_t EnigmaPlanInfo::namedPlaceholderLength(std::size_t pos) const {
+std::size_t PlanInfo::namedPlaceholderLength(std::size_t pos) const {
     if (!isValidPlaceholder(pos)) {
         return 0;
     }
@@ -98,7 +99,7 @@ std::size_t EnigmaPlanInfo::namedPlaceholderLength(std::size_t pos) const {
     return i - pos;
 }
 
-std::tuple<std::string, unsigned> EnigmaPlanInfo::parseNumberedParameters() const {
+std::tuple<std::string, unsigned> PlanInfo::parseNumberedParameters() const {
     unsigned numParams{0};
     std::ostringstream rewritten;
 
@@ -127,7 +128,7 @@ std::tuple<std::string, unsigned> EnigmaPlanInfo::parseNumberedParameters() cons
     return std::make_tuple(rewritten.str(), numParams);
 }
 
-std::tuple<std::string, std::vector<std::string> > EnigmaPlanInfo::parseNamedParameters() const {
+std::tuple<std::string, std::vector<std::string> > PlanInfo::parseNamedParameters() const {
     unsigned numParams{0};
     std::vector<std::string> params;
     std::ostringstream rewritten;
@@ -157,11 +158,11 @@ std::tuple<std::string, std::vector<std::string> > EnigmaPlanInfo::parseNamedPar
 }
 
 
-EnigmaPlanCache::CachedPlan::CachedPlan(std::string const & cmd)
+PlanCache::CachedPlan::CachedPlan(std::string const & cmd)
         : planInfo(cmd)
 {}
 
-EnigmaPlanCache::CachedPlan const * EnigmaPlanCache::lookupPlan(std::string const & query) const {
+PlanCache::CachedPlan const * PlanCache::lookupPlan(std::string const & query) const {
     auto it = plans_.find(query);
     if (it != plans_.end()) {
         return it->second.get();
@@ -170,38 +171,38 @@ EnigmaPlanCache::CachedPlan const * EnigmaPlanCache::lookupPlan(std::string cons
     }
 }
 
-void EnigmaPlanCache::storePlan(std::string const & query, std::string const & statementName) {
+void PlanCache::storePlan(std::string const & query, std::string const & statementName) {
     auto plan = p_CachedPlan(new CachedPlan(query));
     plan->statementName = statementName;
     plans_.insert(std::make_pair(query, std::move(plan)));
 }
 
 
-EnigmaPool::EnigmaPool(Array const & options) {
+Pool::Pool(Array const & options) {
     for (unsigned i = 0; i < poolSize_; i++) {
         addConnection(options);
     }
 }
 
-EnigmaPool::~EnigmaPool() {
+Pool::~Pool() {
 }
 
-void EnigmaPool::addConnection(Array const & options) {
-    auto connection = std::make_shared<EnigmaConnection>(options);
+void Pool::addConnection(Array const & options) {
+    auto connection = std::make_shared<Connection>(options);
     auto connectionId = nextConnectionIndex_++;
     connectionMap_.insert(std::make_pair(connectionId, connection));
     idleConnections_.push_back(connectionId);
 }
 
-EnigmaQueryAwait * EnigmaPool::enqueue(p_EnigmaQuery query) {
+QueryAwait * Pool::enqueue(p_Query query) {
     if (queue_.size() >= maxQueueSize_) {
         // TODO improve error reporting
-        throw EnigmaException("Enigma queue size exceeded");
+        throw Exception("Enigma queue size exceeded");
     }
 
     bool shouldExecute = queue_.empty() && !idleConnections_.empty();
-    LOG(INFO) << "create EnigmaQueryAwait";
-    auto event = new EnigmaQueryAwait(std::move(query));
+    LOG(INFO) << "create QueryAwait";
+    auto event = new QueryAwait(std::move(query));
     queue_.push(event);
 
     if (shouldExecute) {
@@ -211,7 +212,7 @@ EnigmaQueryAwait * EnigmaPool::enqueue(p_EnigmaQuery query) {
     return event;
 }
 
-unsigned EnigmaPool::assignConnectionId() {
+unsigned Pool::assignConnectionId() {
     always_assert(!idleConnections_.empty());
     auto index = rand() % idleConnections_.size();
     unsigned connectionId = idleConnections_[index];
@@ -223,8 +224,8 @@ unsigned EnigmaPool::assignConnectionId() {
     return connectionId;
 }
 
-void EnigmaPool::executeNext() {
-    LOG(INFO) << "EnigmaPool::executeNext";
+void Pool::executeNext() {
+    LOG(INFO) << "Pool::executeNext";
     always_assert(!queue_.empty());
 
     auto connectionId = assignConnectionId();
@@ -237,8 +238,8 @@ void EnigmaPool::executeNext() {
     query->begin(callback);
 }
 
-void EnigmaPool::queryCompleted(unsigned connectionId) {
-    LOG(INFO) << "EnigmaPool::queryCompleted";
+void Pool::queryCompleted(unsigned connectionId) {
+    LOG(INFO) << "Pool::queryCompleted";
     idleConnections_.push_back(connectionId);
     if (!queue_.empty()) {
         executeNext();
@@ -246,29 +247,30 @@ void EnigmaPool::queryCompleted(unsigned connectionId) {
 }
 
 
-const StaticString s_EnigmaPoolInterface("EnigmaPoolInterface");
+const StaticString s_PoolInterface("PoolInterface");
 
-Object EnigmaPoolInterface::newInstance(EnigmaPool * p) {
-    Object instance{Unit::lookupClass(s_EnigmaPoolInterface.get())};
-    Native::data<EnigmaPoolInterface>(instance)
+Object PoolInterface::newInstance(Pool * p) {
+    Object instance{Unit::lookupClass(s_PoolInterface.get())};
+    Native::data<PoolInterface>(instance)
             ->pool = p;
     return instance;
 }
 
 
-Object HHVM_METHOD(EnigmaPoolInterface, query, String const & command, Array const & params) {
-    auto poolInterface = Native::data<EnigmaPoolInterface>(this_);
+Object HHVM_METHOD(PoolInterface, query, String const & command, Array const & params) {
+    auto poolInterface = Native::data<PoolInterface>(this_);
 
-    EnigmaPlanInfo planInfo(command.c_str());
+    PlanInfo planInfo(command.c_str());
     auto bindableParams = planInfo.mapParameters(params);
-    auto query = new EnigmaQuery(EnigmaQuery::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
-    auto waitEvent = poolInterface->pool->enqueue(std::unique_ptr<EnigmaQuery>(query));
+    auto query = new Query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
+    auto waitEvent = poolInterface->pool->enqueue(std::unique_ptr<Query>(query));
     return Object{waitEvent->getWaitHandle()};
 }
 
-void registerEnigmaQueueClasses() {
-    HHVM_ME(EnigmaPoolInterface, query);
-    Native::registerNativeDataInfo<EnigmaPoolInterface>(s_EnigmaPoolInterface.get());
+void registerQueueClasses() {
+    HHVM_ME(PoolInterface, query);
+    Native::registerNativeDataInfo<PoolInterface>(s_PoolInterface.get());
 }
 
+}
 }

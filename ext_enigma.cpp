@@ -5,11 +5,9 @@
 
 namespace HPHP {
 
-    const StaticString s_EnigmaQueryResult("EnigmaQueryResult");
-
     Object HHVM_FUNCTION(enigma_create_pool, Array const & options) {
-        auto pool = new EnigmaPool(options);
-        auto poolInterface = EnigmaPoolInterface::newInstance(pool);
+        auto pool = new Enigma::Pool(options);
+        auto poolInterface = Enigma::PoolInterface::newInstance(pool);
         return poolInterface;
     }
 
@@ -20,8 +18,8 @@ namespace HPHP {
 
         void moduleInit() override {
             HHVM_FE(enigma_create_pool);
-            registerEnigmaClasses();
-            registerEnigmaQueueClasses();
+            Enigma::registerClasses();
+            Enigma::registerQueueClasses();
             loadSystemlib();
         }
     } s_enigma_extension;

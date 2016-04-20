@@ -5,9 +5,10 @@
 #include "enigma-query.h"
 
 namespace HPHP {
+namespace Enigma {
 
 
-struct EnigmaPlanInfo {
+struct PlanInfo {
     enum class ParameterType {
         /*
          * Query uses the numbered prepared parameter placeholder.
@@ -21,7 +22,7 @@ struct EnigmaPlanInfo {
         Named
     };
 
-    EnigmaPlanInfo(std::string const & cmd);
+    PlanInfo(std::string const & cmd);
 
     Array mapParameters(Array const & params);
 
@@ -42,24 +43,24 @@ private:
     std::size_t namedPlaceholderLength(std::size_t pos) const;
 };
 
-class EnigmaPlanCache {
+class PlanCache {
 public:
     struct CachedPlan {
         CachedPlan(std::string const & cmd);
 
         std::string statementName;
-        EnigmaPlanInfo planInfo;
+        PlanInfo planInfo;
     };
 
     typedef std::unique_ptr<CachedPlan> p_CachedPlan;
 
     const unsigned DefaultPlanCacheSize = 30;
 
-    EnigmaPlanCache();
-    ~EnigmaPlanCache();
+    PlanCache();
+    ~PlanCache();
 
-    EnigmaPlanCache(EnigmaPlanCache const &) = delete;
-    EnigmaPlanCache & operator = (EnigmaPlanCache const &) = delete;
+    PlanCache(PlanCache const &) = delete;
+    PlanCache & operator = (PlanCache const &) = delete;
 
     CachedPlan const * lookupPlan(std::string const & query) const;
     void storePlan(std::string const & query, std::string const & statementName);
@@ -70,27 +71,27 @@ private:
 };
 
 
-class EnigmaPool {
+class Pool {
 public:
     const unsigned DefaultQueueSize = 50;
     const unsigned DefaultPoolSize = 1;
 
-    EnigmaPool(Array const & options);
-    ~EnigmaPool();
+    Pool(Array const & options);
+    ~Pool();
 
-    EnigmaPool(EnigmaPool const &) = delete;
-    EnigmaPool & operator = (EnigmaPool const &) = delete;
+    Pool(Pool const &) = delete;
+    Pool & operator = (Pool const &) = delete;
 
-    EnigmaQueryAwait * enqueue(p_EnigmaQuery query);
+    QueryAwait * enqueue(p_Query query);
 
 private:
     unsigned maxQueueSize_{ DefaultQueueSize };
     // Number of connections we'll keep alive (even if they're idle)
     unsigned poolSize_{ DefaultPoolSize };
     unsigned nextConnectionIndex_{ 0 };
-    std::queue<EnigmaQueryAwait *> queue_;
+    std::queue<QueryAwait *> queue_;
     std::vector<unsigned> idleConnections_;
-    std::unordered_map<unsigned, sp_EnigmaConnection> connectionMap_;
+    std::unordered_map<unsigned, sp_Connection> connectionMap_;
 
 
     unsigned assignConnectionId();
@@ -100,15 +101,16 @@ private:
 };
 
 
-class EnigmaPoolInterface {
+class PoolInterface {
 public:
-    static Object newInstance(EnigmaPool * p);
+    static Object newInstance(Pool * p);
 
-    EnigmaPool * pool;
+    Pool * pool;
 };
 
-void registerEnigmaQueueClasses();
+void registerQueueClasses();
 
+}
 }
 
 #endif //HPHP_ENIGMA_QUEUE_H

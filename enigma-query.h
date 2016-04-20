@@ -8,9 +8,9 @@
 #include "pgsql-result.h"
 
 namespace HPHP {
+namespace Enigma {
 
-
-class EnigmaQuery {
+class Query {
 public:
     // Execute an SQL command, without any parameters
     enum class RawInit {};
@@ -28,13 +28,13 @@ public:
         Prepared
     };
 
-    EnigmaQuery(RawInit, String const & command);
-    EnigmaQuery(ParameterizedInit, String const & command, Array const & params);
-    EnigmaQuery(PrepareInit, String const & stmtName, String const & command, unsigned numParams);
-    EnigmaQuery(PreparedInit, String const & stmtName, Array const & params);
+    Query(RawInit, String const & command);
+    Query(ParameterizedInit, String const & command, Array const & params);
+    Query(PrepareInit, String const & stmtName, String const & command, unsigned numParams);
+    Query(PreparedInit, String const & stmtName, Array const & params);
 
-    EnigmaQuery(const EnigmaQuery &) = delete;
-    EnigmaQuery & operator = (const EnigmaQuery &) = delete;
+    Query(const Query &) = delete;
+    Query & operator = (const Query &) = delete;
 
     inline Type type() const {
         return type_;
@@ -64,16 +64,16 @@ private:
     Pgsql::PreparedParameters params_;
 };
 
-typedef std::unique_ptr<EnigmaQuery> p_EnigmaQuery;
+typedef std::unique_ptr<Query> p_Query;
 
 
-class EnigmaResult {
+class Result {
     // TODO
 };
 
 
 
-class EnigmaErrorResult : public EnigmaResult {
+class ErrorResult : public Result {
 public:
     static Object newInstance(std::string const & message);
 
@@ -87,7 +87,7 @@ private:
     void postConstruct(std::string const & message);
 };
 
-class EnigmaQueryResult : public EnigmaResult {
+class QueryResult : public Result {
 public:
     static Object newInstance(std::unique_ptr<Pgsql::ResultResource> results);
 
@@ -98,9 +98,9 @@ public:
         kDontCallCtor = 0x08
     };
 
-    EnigmaQueryResult();
-    EnigmaQueryResult(EnigmaQueryResult const &) = delete;
-    EnigmaQueryResult & operator =(EnigmaQueryResult const & src);
+    QueryResult();
+    QueryResult(QueryResult const &) = delete;
+    QueryResult & operator =(QueryResult const & src);
 
     inline Pgsql::ResultResource const & resource() const {
         return *results_.get();
@@ -112,7 +112,7 @@ private:
     void postConstruct(std::unique_ptr<Pgsql::ResultResource> results);
 };
 
-class EnigmaConnection {
+class Connection {
 public:
     enum class State {
         Idle,       // connection is idle
@@ -124,9 +124,9 @@ public:
 
     typedef std::function<void(bool, Pgsql::ResultResource *)> QueryCompletionCallback;
 
-    EnigmaConnection(Array const & options);
+    Connection(Array const & options);
 
-    void executeQuery(p_EnigmaQuery query, QueryCompletionCallback callback);
+    void executeQuery(p_Query query, QueryCompletionCallback callback);
     void cancelQuery();
 
     inline bool inTransaction() const {
@@ -154,7 +154,7 @@ public:
     }
 
 protected:
-    friend struct EnigmaQueryAwait;
+    friend struct QueryAwait;
 
     void socketReady(bool read, bool write);
 
@@ -165,7 +165,7 @@ private:
     bool writing_{ true };
 
     bool hasQueuedQuery_ { false };
-    p_EnigmaQuery nextQuery_;
+    p_Query nextQuery_;
     QueryCompletionCallback queryCallback_;
     std::string lastError_;
 
@@ -178,42 +178,42 @@ private:
     void connectionDied();
 };
 
-typedef std::shared_ptr<EnigmaConnection> sp_EnigmaConnection;
+typedef std::shared_ptr<Connection> sp_Connection;
 
 
 
-struct EnigmaQueryAwait;
+struct QueryAwait;
 
 /**
  * Asynchronous socket read/write handler for libpq sockets
  */
-struct EnigmaSocketIoHandler : AsioEventHandler {
+struct SocketIoHandler : AsioEventHandler {
 public:
-    EnigmaSocketIoHandler(AsioEventBase * base, int fd, EnigmaQueryAwait * event);
+    SocketIoHandler(AsioEventBase * base, int fd, QueryAwait * event);
 
     virtual void handlerReady(uint16_t events) noexcept override;
 
 private:
-    EnigmaQueryAwait * pgsqlEvent_;
+    QueryAwait * pgsqlEvent_;
 };
 
 
-struct EnigmaQueryAwait : public AsioExternalThreadEvent {
+struct QueryAwait : public AsioExternalThreadEvent {
 public:
     typedef std::function<void ()> CompletionCallback;
 
-    EnigmaQueryAwait(p_EnigmaQuery query);
-    ~EnigmaQueryAwait();
+    QueryAwait(p_Query query);
+    ~QueryAwait();
 
     virtual void unserialize(Cell & result) override;
-    void assign(sp_EnigmaConnection connection);
+    void assign(sp_Connection connection);
     void begin(CompletionCallback callback);
     void cancel();
 
 protected:
-    sp_EnigmaConnection connection_;
+    sp_Connection connection_;
 
-    friend class EnigmaSocketIoHandler;
+    friend class SocketIoHandler;
 
     void socketReady(bool read, bool write);
     void queryCompleted(bool succeeded, std::unique_ptr<Pgsql::ResultResource> result);
@@ -221,17 +221,18 @@ protected:
     void detachSocketIoHandler();
 
 private:
-    std::shared_ptr<EnigmaSocketIoHandler> socketIoHandler_;
+    std::shared_ptr<SocketIoHandler> socketIoHandler_;
     int socket_{ -1 };
     bool succeeded_;
     bool writing_{ true };
     std::unique_ptr<Pgsql::ResultResource> result_;
-    p_EnigmaQuery query_{ nullptr };
+    p_Query query_{ nullptr };
     CompletionCallback callback_;
 };
 
-void registerEnigmaClasses();
+void registerClasses();
 
+}
 }
 
 #endif //HPHP_ENIGMA_QUERY_H

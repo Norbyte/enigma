@@ -3,20 +3,21 @@
 #include "hphp/runtime/base/execution-context.h"
 
 namespace HPHP {
+namespace Enigma {
 
 void throwEnigmaException(std::string const & message) {
-    auto error = EnigmaErrorResult::newInstance(message);
+    auto error = ErrorResult::newInstance(message);
     throw error;
     // SystemLib::throwExceptionObject()
     // throw_object(exception_type, params, true /* init */);
 }
 
-EnigmaSocketIoHandler::EnigmaSocketIoHandler(AsioEventBase* base, int fd, EnigmaQueryAwait * event)
+SocketIoHandler::SocketIoHandler(AsioEventBase* base, int fd, QueryAwait * event)
         : AsioEventHandler(base, fd), pgsqlEvent_(event)
 { }
 
 
-void EnigmaSocketIoHandler::handlerReady(uint16_t events) noexcept {
+void SocketIoHandler::handlerReady(uint16_t events) noexcept {
     pgsqlEvent_->socketReady(
             (events & AsioEventHandler::READ) == AsioEventHandler::READ,
             (events & AsioEventHandler::WRITE) == AsioEventHandler::WRITE
@@ -25,21 +26,21 @@ void EnigmaSocketIoHandler::handlerReady(uint16_t events) noexcept {
 
 
 
-EnigmaQueryAwait::EnigmaQueryAwait(p_EnigmaQuery query)
+QueryAwait::QueryAwait(p_Query query)
         : query_(std::move(query))
 {}
 
-EnigmaQueryAwait::~EnigmaQueryAwait() {
+QueryAwait::~QueryAwait() {
     detachSocketIoHandler();
 }
 
-void EnigmaQueryAwait::assign(sp_EnigmaConnection connection) {
+void QueryAwait::assign(sp_Connection connection) {
     always_assert(!connection_);
     connection_ = connection;
 }
 
-void EnigmaQueryAwait::begin(CompletionCallback callback) {
-    LOG(INFO) << "EnigmaQueryAwait::begin()";
+void QueryAwait::begin(CompletionCallback callback) {
+    LOG(INFO) << "QueryAwait::begin()";
     always_assert(connection_);
 
     callback_ = callback;
@@ -50,7 +51,7 @@ void EnigmaQueryAwait::begin(CompletionCallback callback) {
     attachSocketIoHandler();
 }
 
-void EnigmaQueryAwait::cancel() {
+void QueryAwait::cancel() {
     if (query_) {
         // TODO: add error message!
         /*
@@ -67,7 +68,7 @@ void EnigmaQueryAwait::cancel() {
     }
 }
 
-void EnigmaQueryAwait::socketReady(bool read, bool write) {
+void QueryAwait::socketReady(bool read, bool write) {
     /*if (read && write) LOG(INFO) << "socket ready RW";
     else if (read) LOG(INFO) << "socket ready R";
     else LOG(INFO) << "socket ready W";*/
@@ -104,7 +105,7 @@ void EnigmaQueryAwait::socketReady(bool read, bool write) {
     }
 }
 
-void EnigmaQueryAwait::queryCompleted(bool succeeded, std::unique_ptr<Pgsql::ResultResource> result) {
+void QueryAwait::queryCompleted(bool succeeded, std::unique_ptr<Pgsql::ResultResource> result) {
     LOG(INFO) << "queryCompleted()";
     /*
      * There is no need to keep the handler running after the query has
@@ -124,11 +125,11 @@ void EnigmaQueryAwait::queryCompleted(bool succeeded, std::unique_ptr<Pgsql::Res
     markAsFinished();
 }
 
-void EnigmaQueryAwait::unserialize(Cell & result) {
+void QueryAwait::unserialize(Cell & result) {
     LOG(INFO) << "Unserialize!";
     if (succeeded_) {
         LOG(INFO) << "got results!";
-        auto queryResult = EnigmaQueryResult::newInstance(std::move(result_));
+        auto queryResult = QueryResult::newInstance(std::move(result_));
         cellCopy(make_tv<KindOfObject>(queryResult.detach()), result);
     } else {
         LOG(INFO) << "got exc!";
@@ -141,17 +142,17 @@ void EnigmaQueryAwait::unserialize(Cell & result) {
     }
 }
 
-void EnigmaQueryAwait::attachSocketIoHandler() {
+void QueryAwait::attachSocketIoHandler() {
     LOG(INFO) << "attaching ASIO handler";
     auto eventBase = getSingleton<AsioEventBase>();
-    auto handler = std::make_shared<EnigmaSocketIoHandler>(eventBase.get(), connection_->socket(), this);
+    auto handler = std::make_shared<SocketIoHandler>(eventBase.get(), connection_->socket(), this);
     handler->registerHandler(AsioEventHandler::READ_WRITE | AsioEventHandler::PERSIST);
     writing_ = true;
     socketIoHandler_ = handler;
     socket_ = connection_->socket();
 }
 
-void EnigmaQueryAwait::detachSocketIoHandler() {
+void QueryAwait::detachSocketIoHandler() {
     if (socketIoHandler_) {
         LOG(INFO) << "detaching ASIO handler";
         socketIoHandler_->unregisterHandler();
@@ -162,73 +163,73 @@ void EnigmaQueryAwait::detachSocketIoHandler() {
 
 
 
-EnigmaQuery::EnigmaQuery(RawInit, String const & command)
+Query::Query(RawInit, String const & command)
         : type_(Type::Raw), command_(command)
 {}
 
-EnigmaQuery::EnigmaQuery(ParameterizedInit, String const & command, Array const & params)
+Query::Query(ParameterizedInit, String const & command, Array const & params)
         : type_(Type::Parameterized), command_(command), params_(params)
 {}
 
-EnigmaQuery::EnigmaQuery(PrepareInit, String const & stmtName, String const & command, unsigned numParams)
+Query::Query(PrepareInit, String const & stmtName, String const & command, unsigned numParams)
         : type_(Type::Prepare), command_(command), statement_(stmtName), numParams_(numParams)
 {}
 
-EnigmaQuery::EnigmaQuery(PreparedInit, String const & stmtName, Array const & params)
+Query::Query(PreparedInit, String const & stmtName, Array const & params)
         : type_(Type::Prepared), statement_(stmtName), params_(params)
 {}
 
 
 
-const StaticString s_EnigmaErrorResult("EnigmaErrorResult");
+const StaticString s_ErrorResult("ErrorResult");
 
-Object EnigmaErrorResult::newInstance(std::string const & message) {
-    Object instance{Unit::lookupClass(s_EnigmaErrorResult.get())};
-    Native::data<EnigmaErrorResult>(instance)
+Object ErrorResult::newInstance(std::string const & message) {
+    Object instance{Unit::lookupClass(s_ErrorResult.get())};
+    Native::data<ErrorResult>(instance)
             ->postConstruct(message);
     return instance;
 }
 
-void EnigmaErrorResult::postConstruct(std::string const & message) {
+void ErrorResult::postConstruct(std::string const & message) {
     message_ = message;
 }
 
-String HHVM_METHOD(EnigmaErrorResult, getMessage) {
-    auto data = Native::data<EnigmaErrorResult>(this_);
+String HHVM_METHOD(ErrorResult, getMessage) {
+    auto data = Native::data<ErrorResult>(this_);
     return data->getMessage();
 }
 
 const StaticString
-    s_EnigmaQueryResult("EnigmaQueryResult"),
+    s_QueryResult("QueryResult"),
     s_BindToProperties("BIND_TO_PROPERTIES"),
     s_IgnoreUndeclared("IGNORE_UNDECLARED"),
     s_AllowUndeclared("ALLOW_UNDECLARED"),
     s_DontCallCtor("DONT_CALL_CTOR");
 
-Object EnigmaQueryResult::newInstance(std::unique_ptr<Pgsql::ResultResource> results) {
-    Object instance{Unit::lookupClass(s_EnigmaQueryResult.get())};
-    Native::data<EnigmaQueryResult>(instance)
+Object QueryResult::newInstance(std::unique_ptr<Pgsql::ResultResource> results) {
+    Object instance{Unit::lookupClass(s_QueryResult.get())};
+    Native::data<QueryResult>(instance)
             ->postConstruct(std::move(results));
     return instance;
 }
 
 
-EnigmaQueryResult::EnigmaQueryResult() {}
+QueryResult::QueryResult() {}
 
-EnigmaQueryResult & EnigmaQueryResult::operator = (EnigmaQueryResult const & src) {
+QueryResult & QueryResult::operator = (QueryResult const & src) {
     throw Object(SystemLib::AllocExceptionObject(
-            "Cloning EnigmaQueryResult is not allowed"
+            "Cloning QueryResult is not allowed"
     ));
 }
 
-void EnigmaQueryResult::postConstruct(std::unique_ptr<Pgsql::ResultResource> results) {
-    // TODO EnigmaResult::create();
+void QueryResult::postConstruct(std::unique_ptr<Pgsql::ResultResource> results) {
+    // TODO Result::create();
     results_ = std::move(results);
 }
 
 
-Array HHVM_METHOD(EnigmaQueryResult, fetchArrays) {
-    auto data = Native::data<EnigmaQueryResult>(this_);
+Array HHVM_METHOD(QueryResult, fetchArrays) {
+    auto data = Native::data<QueryResult>(this_);
     Pgsql::ResultResource const & resource = data->resource();
 
     Array results;
@@ -255,14 +256,14 @@ Array HHVM_METHOD(EnigmaQueryResult, fetchArrays) {
 }
 
 
-Array HHVM_METHOD(EnigmaQueryResult, fetchObjects, String const & cls, int64_t flags) {
+Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags) {
     auto rowClass = Unit::lookupClass(cls.get());
     if (rowClass == nullptr) {
         throwEnigmaException(std::string("Could not find result row class: ") + cls.c_str());
     }
 
     auto ctor = rowClass->getCtor();
-    auto data = Native::data<EnigmaQueryResult>(this_);
+    auto data = Native::data<QueryResult>(this_);
     Pgsql::ResultResource const & resource = data->resource();
     Array results;
     auto rows = resource.numTuples(),
@@ -273,15 +274,15 @@ Array HHVM_METHOD(EnigmaQueryResult, fetchObjects, String const & cls, int64_t f
         colTypes[col] = resource.columnType(col);
     }
 
-    bool callCtor = !(flags & EnigmaQueryResult::kDontCallCtor);
+    bool callCtor = !(flags & QueryResult::kDontCallCtor);
     /*
      * When binding to properties, we'll set class properties directly in
      * the property vector, thus bypassing __set and dynamic properties.
      */
-    if (flags & EnigmaQueryResult::kBindToProperties) {
+    if (flags & QueryResult::kBindToProperties) {
 
-        bool allowInvalidSlot = (bool)(flags & (EnigmaQueryResult::kIgnoreUndeclared | EnigmaQueryResult::kAllowUndeclared)),
-             useSetter = (bool)(flags & EnigmaQueryResult::kAllowUndeclared);
+        bool allowInvalidSlot = (bool)(flags & (QueryResult::kIgnoreUndeclared | QueryResult::kAllowUndeclared)),
+             useSetter = (bool)(flags & QueryResult::kAllowUndeclared);
 
         /*
          * The kIgnoreUndeclared and kAllowUndeclared flags control the way fetching works
@@ -354,11 +355,11 @@ Array HHVM_METHOD(EnigmaQueryResult, fetchObjects, String const & cls, int64_t f
 
 
 
-EnigmaConnection::EnigmaConnection(Array const & options)
+Connection::Connection(Array const & options)
         : options_(options)
 {}
 
-void EnigmaConnection::beginConnect() {
+void Connection::beginConnect() {
     if (state_ != State::Dead) {
         throw EnigmaException("Already connected");
     }
@@ -375,7 +376,7 @@ void EnigmaConnection::beginConnect() {
     }
 }
 
-void EnigmaConnection::executeQuery(p_EnigmaQuery query, QueryCompletionCallback callback) {
+void Connection::executeQuery(p_Query query, QueryCompletionCallback callback) {
     if (hasQueuedQuery_) {
         throw EnigmaException("A query is already queued on this connection");
     }
@@ -403,28 +404,28 @@ void EnigmaConnection::executeQuery(p_EnigmaQuery query, QueryCompletionCallback
     }
 }
 
-void EnigmaConnection::cancelQuery() {
+void Connection::cancelQuery() {
     if (state_ == State::Executing) {
         resource_->cancel();
     }
 }
 
-void EnigmaConnection::beginQuery() {
+void Connection::beginQuery() {
     LOG(INFO) << "starting query";
     switch (nextQuery_->type()) {
-        case EnigmaQuery::Type::Raw:
+        case Query::Type::Raw:
             resource_->sendQuery(nextQuery_->command());
             break;
 
-        case EnigmaQuery::Type::Parameterized:
+        case Query::Type::Parameterized:
             resource_->sendQueryParams(nextQuery_->command(), nextQuery_->params());
             break;
 
-        case EnigmaQuery::Type::Prepare:
+        case Query::Type::Prepare:
             resource_->sendPrepare(nextQuery_->command(), nextQuery_->statement(), nextQuery_->numParams());
             break;
 
-        case EnigmaQuery::Type::Prepared:
+        case Query::Type::Prepared:
             resource_->sendQueryPrepared(nextQuery_->statement(), nextQuery_->params());
             break;
 
@@ -435,7 +436,7 @@ void EnigmaConnection::beginQuery() {
     state_ = State::Executing;
 }
 
-void EnigmaConnection::finishQuery(bool succeeded, std::unique_ptr<Pgsql::ResultResource> result) {
+void Connection::finishQuery(bool succeeded, std::unique_ptr<Pgsql::ResultResource> result) {
     if (!hasQueuedQuery_) {
         return;
     }
@@ -447,7 +448,7 @@ void EnigmaConnection::finishQuery(bool succeeded, std::unique_ptr<Pgsql::Result
     callback(succeeded, result.release());
 }
 
-void EnigmaConnection::socketReady(bool read, bool write) {
+void Connection::socketReady(bool read, bool write) {
     switch (state_) {
         case State::Idle:
         case State::Dead:
@@ -486,7 +487,7 @@ void EnigmaConnection::socketReady(bool read, bool write) {
     }
 }
 
-void EnigmaConnection::queryCompleted() {
+void Connection::queryCompleted() {
     LOG(INFO) << "exec ok!";
     state_ = State::Idle;
     auto result = resource_->getResult();
@@ -524,7 +525,7 @@ void EnigmaConnection::queryCompleted() {
     }
 }
 
-void EnigmaConnection::processPollingStatus(Pgsql::ConnectionResource::PollingStatus status) {
+void Connection::processPollingStatus(Pgsql::ConnectionResource::PollingStatus status) {
     switch (status) {
         case Pgsql::ConnectionResource::PollingStatus::Ok:
             connectionOk();
@@ -544,7 +545,7 @@ void EnigmaConnection::processPollingStatus(Pgsql::ConnectionResource::PollingSt
     }
 }
 
-void EnigmaConnection::connectionOk() {
+void Connection::connectionOk() {
     LOG(INFO) << "pgsql connected";
     state_ = State::Idle;
     if (hasQueuedQuery_) {
@@ -552,28 +553,29 @@ void EnigmaConnection::connectionOk() {
     }
 }
 
-void EnigmaConnection::connectionDied() {
+void Connection::connectionDied() {
     LOG(INFO) << "pgsql connection failed: " << resource_->errorMessage().c_str();
     state_ = State::Dead;
     finishQuery(false, nullptr);
 }
 
 
-void registerEnigmaClasses() {
-    HHVM_ME(EnigmaErrorResult, getMessage);
-    Native::registerNativeDataInfo<EnigmaErrorResult>(s_EnigmaErrorResult.get());
+void registerClasses() {
+    HHVM_ME(ErrorResult, getMessage);
+    Native::registerNativeDataInfo<ErrorResult>(s_ErrorResult.get());
 
-    HHVM_ME(EnigmaQueryResult, fetchArrays);
-    HHVM_ME(EnigmaQueryResult, fetchObjects);
-    Native::registerNativeDataInfo<EnigmaQueryResult>(s_EnigmaQueryResult.get());
-    Native::registerClassConstant<KindOfInt64>(s_EnigmaQueryResult.get(),
-        s_BindToProperties.get(), EnigmaQueryResult::kBindToProperties);
-    Native::registerClassConstant<KindOfInt64>(s_EnigmaQueryResult.get(),
-        s_IgnoreUndeclared.get(), EnigmaQueryResult::kIgnoreUndeclared);
-    Native::registerClassConstant<KindOfInt64>(s_EnigmaQueryResult.get(),
-        s_AllowUndeclared.get(), EnigmaQueryResult::kAllowUndeclared);
-    Native::registerClassConstant<KindOfInt64>(s_EnigmaQueryResult.get(),
-        s_DontCallCtor.get(), EnigmaQueryResult::kDontCallCtor);
+    HHVM_ME(QueryResult, fetchArrays);
+    HHVM_ME(QueryResult, fetchObjects);
+    Native::registerNativeDataInfo<QueryResult>(s_QueryResult.get());
+    Native::registerClassConstant<KindOfInt64>(s_QueryResult.get(),
+        s_BindToProperties.get(), QueryResult::kBindToProperties);
+    Native::registerClassConstant<KindOfInt64>(s_QueryResult.get(),
+        s_IgnoreUndeclared.get(), QueryResult::kIgnoreUndeclared);
+    Native::registerClassConstant<KindOfInt64>(s_QueryResult.get(),
+        s_AllowUndeclared.get(), QueryResult::kAllowUndeclared);
+    Native::registerClassConstant<KindOfInt64>(s_QueryResult.get(),
+        s_DontCallCtor.get(), QueryResult::kDontCallCtor);
 }
 
+}
 }
