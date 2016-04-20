@@ -66,7 +66,7 @@ public:
     /**
      * Returns the error message associated with the command, or an empty string if there was no error.
      */
-    Variant errorMessage() const;
+    std::string errorMessage() const;
 
     /**
      * Returns the error message associated with the command, or an empty string if there was no error.

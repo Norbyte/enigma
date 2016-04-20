@@ -123,7 +123,7 @@ public:
         Dead        // not connected yet, or connection was lost
     };
 
-    typedef std::function<void(bool, Pgsql::ResultResource *)> QueryCompletionCallback;
+    typedef std::function<void(bool, Pgsql::ResultResource *, std::string)> QueryCompletionCallback;
 
     Connection(Array const & options);
 
@@ -217,7 +217,8 @@ protected:
     friend class SocketIoHandler;
 
     void socketReady(bool read, bool write);
-    void queryCompleted(bool succeeded, std::unique_ptr<Pgsql::ResultResource> result);
+    void queryCompleted(bool succeeded, std::unique_ptr<Pgsql::ResultResource> result,
+                        std::string const & errorInfo);
     void attachSocketIoHandler();
     void detachSocketIoHandler();
 
@@ -227,6 +228,7 @@ private:
     bool succeeded_;
     bool writing_{ true };
     std::unique_ptr<Pgsql::ResultResource> result_;
+    std::string lastError_;
     p_Query query_{ nullptr };
     CompletionCallback callback_;
 };

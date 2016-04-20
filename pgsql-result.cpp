@@ -69,12 +69,12 @@ ResultResource::Status ResultResource::status() const {
 /**
  * Returns the error message associated with the command, or an empty string if there was no error.
  */
-Variant ResultResource::errorMessage() const {
+std::string ResultResource::errorMessage() const {
     auto message = PQresultErrorMessage(result_);
     if (message == nullptr) {
-        return Variant(Variant::NullInit{});
+        return std::string();
     } else {
-        return String(message);
+        return message;
     }
 }
 

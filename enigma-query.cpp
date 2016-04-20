@@ -44,8 +44,8 @@ void QueryAwait::begin(CompletionCallback callback) {
     always_assert(connection_);
 
     callback_ = callback;
-    auto queryCallback = [this] (bool succeeded, Pgsql::ResultResource * results) {
-        this->queryCompleted(succeeded, std::unique_ptr<Pgsql::ResultResource>(results));
+    auto queryCallback = [this] (bool succeeded, Pgsql::ResultResource * results, std::string errorInfo) {
+        this->queryCompleted(succeeded, std::unique_ptr<Pgsql::ResultResource>(results), errorInfo);
     };
     connection_->executeQuery(std::move(query_), queryCallback);
     attachSocketIoHandler();
@@ -53,12 +53,11 @@ void QueryAwait::begin(CompletionCallback callback) {
 
 void QueryAwait::cancel() {
     if (query_) {
-        // TODO: add error message!
         /*
          * Passing a failure result to the callback is sufficient if we haven't
          * sent the query to the pgsql server yet.
          */
-        queryCompleted(false, nullptr);
+        queryCompleted(false, nullptr, "Query canceled");
     } else {
         /*
          * Cancel the running query.
@@ -101,7 +100,8 @@ void QueryAwait::socketReady(bool read, bool write) {
     }
 }
 
-void QueryAwait::queryCompleted(bool succeeded, std::unique_ptr<Pgsql::ResultResource> result) {
+void QueryAwait::queryCompleted(bool succeeded, std::unique_ptr<Pgsql::ResultResource> result,
+                                std::string const & errorInfo) {
     ENIG_DEBUG("QueryAwait::queryCompleted()");
     /*
      * There is no need to keep the handler running after the query has
@@ -116,6 +116,7 @@ void QueryAwait::queryCompleted(bool succeeded, std::unique_ptr<Pgsql::ResultRes
 
     succeeded_ = succeeded;
     result_ = std::move(result);
+    lastError_ = errorInfo;
     callback_();
     // Notify the client that the async operation completed
     markAsFinished();
@@ -129,11 +130,7 @@ void QueryAwait::unserialize(Cell & result) {
     } else {
         ENIG_DEBUG("QueryAwait::unserialize() caught error");
         result.m_type = DataType::KindOfNull;
-        if (result_) {
-            throwEnigmaException(result_->errorMessage().toString().c_str());
-        } else {
-            throwEnigmaException(connection_->lastError());
-        }
+        throwEnigmaException(lastError_);
     }
 }
 
@@ -438,7 +435,16 @@ void Connection::finishQuery(bool succeeded, std::unique_ptr<Pgsql::ResultResour
     nextQuery_.reset(nullptr);
     auto callback = std::move(queryCallback_);
     queryCallback_ = QueryCompletionCallback{};
-    callback(succeeded, result.release());
+    std::string errorInfo;
+    if (!succeeded) {
+        if (result) {
+            errorInfo = result->errorMessage();
+        } else {
+            errorInfo = resource_->errorMessage();
+        }
+    }
+
+    callback(succeeded, result.release(), errorInfo);
 }
 
 void Connection::socketReady(bool read, bool write) {
