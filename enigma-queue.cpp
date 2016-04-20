@@ -247,10 +247,11 @@ void Pool::queryCompleted(unsigned connectionId) {
 }
 
 
-const StaticString s_PoolInterface("PoolInterface");
+const StaticString s_PoolInterface("PoolInterface"),
+        s_PoolInterfaceNS("Enigma\\PoolInterface");
 
 Object PoolInterface::newInstance(Pool * p) {
-    Object instance{Unit::lookupClass(s_PoolInterface.get())};
+    Object instance{Unit::lookupClass(s_PoolInterfaceNS.get())};
     Native::data<PoolInterface>(instance)
             ->pool = p;
     return instance;
@@ -268,7 +269,7 @@ Object HHVM_METHOD(PoolInterface, query, String const & command, Array const & p
 }
 
 void registerQueueClasses() {
-    HHVM_ME(PoolInterface, query);
+    ENIGMA_ME(PoolInterface, query);
     Native::registerNativeDataInfo<PoolInterface>(s_PoolInterface.get());
 }
 

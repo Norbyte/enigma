@@ -1,25 +1,27 @@
 <?hh // strict
 
+namespace Enigma {
+
 <<__Native>>
-function enigma_create_pool(array $options) : EnigmaQueue;
+function create_pool(array $options) : PoolInterface;
 
 
-<<__NativeData("EnigmaPoolInterface")>>
-class EnigmaPoolInterface {
+<<__NativeData("PoolInterface")>>
+class PoolInterface {
     <<__Native>>
-    function query(string $command, array $params) : Awaitable<EnigmaQueryResult>;
+    function query(string $command, array $params) : Awaitable<QueryResult>;
 }
 
 
-<<__NativeData("EnigmaErrorResult")>>
-class EnigmaErrorResult extends Exception {
+<<__NativeData("ErrorResult")>>
+class ErrorResult extends \Exception {
     <<__Native>>
     public function getMessage() : string;
 }
 
 
-<<__NativeData("EnigmaQueryResult")>>
-class EnigmaQueryResult {
+<<__NativeData("QueryResult")>>
+class QueryResult {
     <<__Native>>
     public function test() : void;
 
@@ -28,4 +30,6 @@ class EnigmaQueryResult {
 
     <<__Native>>
     public function fetchObjects(string $cls, int $flags) : array;
+}
+
 }

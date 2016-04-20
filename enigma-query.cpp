@@ -181,10 +181,11 @@ Query::Query(PreparedInit, String const & stmtName, Array const & params)
 
 
 
-const StaticString s_ErrorResult("ErrorResult");
+const StaticString s_ErrorResult("ErrorResult"),
+        s_ErrorResultNS("Enigma\\ErrorResult");
 
 Object ErrorResult::newInstance(std::string const & message) {
-    Object instance{Unit::lookupClass(s_ErrorResult.get())};
+    Object instance{Unit::lookupClass(s_ErrorResultNS.get())};
     Native::data<ErrorResult>(instance)
             ->postConstruct(message);
     return instance;
@@ -201,13 +202,10 @@ String HHVM_METHOD(ErrorResult, getMessage) {
 
 const StaticString
     s_QueryResult("QueryResult"),
-    s_BindToProperties("BIND_TO_PROPERTIES"),
-    s_IgnoreUndeclared("IGNORE_UNDECLARED"),
-    s_AllowUndeclared("ALLOW_UNDECLARED"),
-    s_DontCallCtor("DONT_CALL_CTOR");
+    s_QueryResultNS("Enigma\\QueryResult");
 
 Object QueryResult::newInstance(std::unique_ptr<Pgsql::ResultResource> results) {
-    Object instance{Unit::lookupClass(s_QueryResult.get())};
+    Object instance{Unit::lookupClass(s_QueryResultNS.get())};
     Native::data<QueryResult>(instance)
             ->postConstruct(std::move(results));
     return instance;
@@ -561,20 +559,16 @@ void Connection::connectionDied() {
 
 
 void registerClasses() {
-    HHVM_ME(ErrorResult, getMessage);
+    ENIGMA_ME(ErrorResult, getMessage);
     Native::registerNativeDataInfo<ErrorResult>(s_ErrorResult.get());
 
-    HHVM_ME(QueryResult, fetchArrays);
-    HHVM_ME(QueryResult, fetchObjects);
+    ENIGMA_ME(QueryResult, fetchArrays);
+    ENIGMA_ME(QueryResult, fetchObjects);
     Native::registerNativeDataInfo<QueryResult>(s_QueryResult.get());
-    Native::registerClassConstant<KindOfInt64>(s_QueryResult.get(),
-        s_BindToProperties.get(), QueryResult::kBindToProperties);
-    Native::registerClassConstant<KindOfInt64>(s_QueryResult.get(),
-        s_IgnoreUndeclared.get(), QueryResult::kIgnoreUndeclared);
-    Native::registerClassConstant<KindOfInt64>(s_QueryResult.get(),
-        s_AllowUndeclared.get(), QueryResult::kAllowUndeclared);
-    Native::registerClassConstant<KindOfInt64>(s_QueryResult.get(),
-        s_DontCallCtor.get(), QueryResult::kDontCallCtor);
+    HHVM_RCC_INT(QueryResultNS, BIND_TO_PROPERTIES, QueryResult::kBindToProperties);
+    HHVM_RCC_INT(QueryResultNS, IGNORE_UNDECLARED, QueryResult::kIgnoreUndeclared);
+    HHVM_RCC_INT(QueryResultNS, ALLOW_UNDECLARED, QueryResult::kAllowUndeclared);
+    HHVM_RCC_INT(QueryResultNS, DONT_CALL_CTOR, QueryResult::kDontCallCtor);
 }
 
 }

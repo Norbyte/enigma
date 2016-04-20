@@ -10,6 +10,8 @@
 namespace HPHP {
 namespace Enigma {
 
+#define ENIGMA_ME(cn,fn) Native::registerBuiltinFunction("Enigma\\" #cn "->" #fn, HHVM_MN(cn,fn))
+
 class Query {
 public:
     // Execute an SQL command, without any parameters

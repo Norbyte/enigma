@@ -5,7 +5,7 @@
 
 namespace HPHP {
 
-    Object HHVM_FUNCTION(enigma_create_pool, Array const & options) {
+    Object HHVM_FUNCTION(create_pool, Array const & options) {
         auto pool = new Enigma::Pool(options);
         auto poolInterface = Enigma::PoolInterface::newInstance(pool);
         return poolInterface;
@@ -17,7 +17,7 @@ namespace HPHP {
         EnigmaExtension() : Extension("enigma", "1.0") { }
 
         void moduleInit() override {
-            HHVM_FE(enigma_create_pool);
+            Native::registerBuiltinFunction("Enigma\\create_pool", HHVM_FN(create_pool));
             Enigma::registerClasses();
             Enigma::registerQueueClasses();
             loadSystemlib();
