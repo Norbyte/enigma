@@ -6,7 +6,7 @@
 namespace HPHP {
 
     Object HHVM_FUNCTION(create_pool, Array const & options) {
-        auto pool = new Enigma::Pool(options);
+        auto pool = std::make_shared<Enigma::Pool>(options);
         auto poolInterface = Enigma::PoolInterface::newInstance(pool);
         return poolInterface;
     }

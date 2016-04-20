@@ -101,12 +101,19 @@ private:
     void queryCompleted(unsigned connectionId);
 };
 
+typedef std::shared_ptr<Pool> sp_Pool;
 
 class PoolInterface {
 public:
-    static Object newInstance(Pool * p);
+    static Object newInstance(sp_Pool p);
 
-    Pool * pool;
+    ~PoolInterface();
+
+    sp_Pool pool;
+
+private:
+    void init(sp_Pool p);
+    void sweep();
 };
 
 void registerQueueClasses();

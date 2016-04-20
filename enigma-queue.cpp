@@ -250,11 +250,23 @@ void Pool::queryCompleted(unsigned connectionId) {
 const StaticString s_PoolInterface("PoolInterface"),
         s_PoolInterfaceNS("Enigma\\PoolInterface");
 
-Object PoolInterface::newInstance(Pool * p) {
+Object PoolInterface::newInstance(sp_Pool p) {
     Object instance{Unit::lookupClass(s_PoolInterfaceNS.get())};
     Native::data<PoolInterface>(instance)
-            ->pool = p;
+            ->init(p);
     return instance;
+}
+
+PoolInterface::~PoolInterface() {
+    sweep();
+}
+
+void PoolInterface::init(sp_Pool p) {
+    pool = p;
+}
+
+void PoolInterface::sweep() {
+    pool.reset();
 }
 
 
