@@ -3,13 +3,23 @@
 namespace Enigma {
 
 <<__Native>>
-function create_pool(array $options) : PoolInterface;
+function create_pool(array $options) : Pool;
+
+
+<<__NativeData("QueryInterface")>>
+class Query {
+    <<__Native>>
+    function __construct(string $command, array $params = []);
+
+    <<__Native>>
+    function enablePlanCache(bool $enabled) : void;
+}
 
 
 <<__NativeData("PoolInterface")>>
-class PoolInterface {
+class Pool {
     <<__Native>>
-    function query(string $command, array $params) : Awaitable<QueryResult>;
+    function query(Query $query) : Awaitable<QueryResult>;
 }
 
 

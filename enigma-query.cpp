@@ -418,10 +418,9 @@ void Connection::beginQuery() {
         case Query::Type::Prepared:
             resource_->sendQueryPrepared(nextQuery_->statement(), nextQuery_->params());
             break;
-
-        // TODO: auto-prepare, plan cache, ... ... (higher level?)
     }
 
+    lastError_.clear();
     writing_ = true;
     state_ = State::Executing;
 }
@@ -435,16 +434,7 @@ void Connection::finishQuery(bool succeeded, std::unique_ptr<Pgsql::ResultResour
     nextQuery_.reset(nullptr);
     auto callback = std::move(queryCallback_);
     queryCallback_ = QueryCompletionCallback{};
-    std::string errorInfo;
-    if (!succeeded) {
-        if (result) {
-            errorInfo = result->errorMessage();
-        } else {
-            errorInfo = resource_->errorMessage();
-        }
-    }
-
-    callback(succeeded, result.release(), errorInfo);
+    callback(succeeded, result.release(), lastError_);
 }
 
 void Connection::socketReady(bool read, bool write) {
@@ -486,6 +476,7 @@ void Connection::queryCompleted() {
     state_ = State::Idle;
     auto result = resource_->getResult();
     if (!result) {
+        lastError_ = resource_->errorMessage();
         finishQuery(false, nullptr);
     } else {
         bool succeeded;
@@ -502,10 +493,16 @@ void Connection::queryCompleted() {
                 break;
 
             case Pgsql::ResultResource::Status::EmptyQuery:
+                lastError_ = "Empty query";
+                succeeded = false;
+                break;
+
             case Pgsql::ResultResource::Status::FatalError:
             case Pgsql::ResultResource::Status::BadResponse:
-                // TODO: use result errormsg or connection errormsg?
-                lastError_ = resource_->errorMessage();
+                lastError_ = result->errorMessage();
+                if (lastError_.empty()) {
+                    lastError_ = resource_->errorMessage();
+                }
                 succeeded = false;
                 break;
 

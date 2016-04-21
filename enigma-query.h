@@ -29,6 +29,10 @@ public:
         Prepared
     };
 
+    enum Flags {
+        kCachePlan = 0x01
+    };
+
     Query(RawInit, String const & command);
     Query(ParameterizedInit, String const & command, Array const & params);
     Query(PrepareInit, String const & stmtName, String const & command, unsigned numParams);
@@ -57,12 +61,21 @@ public:
         return params_;
     }
 
+    inline void setFlags(unsigned flags) {
+        flags_ = flags;
+    }
+
+    inline unsigned flags() const {
+        return flags_;
+    }
+
 private:
     Type type_;
     String command_;
     String statement_;
     unsigned numParams_;
     Pgsql::PreparedParameters params_;
+    unsigned flags_{0};
 };
 
 typedef std::unique_ptr<Query> p_Query;

@@ -8,5 +8,6 @@
 #endif
 
 #define ENIGMA_ME(cn,fn) Native::registerBuiltinFunction("Enigma\\" #cn "->" #fn, HHVM_MN(cn,fn))
+#define ENIGMA_NAMED_ME(cls,cn,fn) Native::registerBuiltinFunction("Enigma\\" #cn "->" #fn, HHVM_MN(cls,fn))
 
 #endif //HPHP_ENIGMA_COMMON_H_H

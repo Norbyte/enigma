@@ -116,6 +116,32 @@ private:
     void sweep();
 };
 
+class QueryInterface {
+public:
+    void init(String const & command, Array const & params);
+
+    inline String const & command() {
+        return command_;
+    }
+
+    inline Array const & params() {
+        return params_;
+    }
+
+    inline void setFlags(unsigned flags) {
+        flags_ = flags;
+    }
+
+    inline unsigned flags() const {
+        return flags_;
+    }
+
+private:
+    String command_;
+    Array params_;
+    unsigned flags_{0};
+};
+
 void registerQueueClasses();
 
 }
