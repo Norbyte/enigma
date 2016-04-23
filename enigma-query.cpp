@@ -51,7 +51,7 @@ void QueryAwait::begin(CompletionCallback callback) {
     attachSocketIoHandler();
 }
 
-void QueryAwait::cancel() {
+void QueryAwait::cancelQuery() {
     if (query_) {
         /*
          * Passing a failure result to the callback is sufficient if we haven't
@@ -65,6 +65,12 @@ void QueryAwait::cancel() {
          */
         connection_->cancelQuery();
     }
+}
+
+p_Query QueryAwait::swapQuery(p_Query query) {
+    auto q = std::move(query_);
+    query_ = std::move(query);
+    return std::move(q);
 }
 
 void QueryAwait::socketReady(bool read, bool write) {
@@ -163,11 +169,19 @@ Query::Query(ParameterizedInit, String const & command, Array const & params)
         : type_(Type::Parameterized), command_(command), params_(params)
 {}
 
+Query::Query(ParameterizedInit, String const & command, Pgsql::PreparedParameters const & params)
+        : type_(Type::Parameterized), command_(command), params_(params)
+{}
+
 Query::Query(PrepareInit, String const & stmtName, String const & command, unsigned numParams)
         : type_(Type::Prepare), command_(command), statement_(stmtName), numParams_(numParams)
 {}
 
 Query::Query(PreparedInit, String const & stmtName, Array const & params)
+        : type_(Type::Prepared), statement_(stmtName), params_(params)
+{}
+
+Query::Query(PreparedInit, String const & stmtName, Pgsql::PreparedParameters const & params)
         : type_(Type::Prepared), statement_(stmtName), params_(params)
 {}
 
@@ -400,6 +414,10 @@ void Connection::cancelQuery() {
     }
 }
 
+void Connection::setStateChangeCallback(StateChangeCallback callback) {
+    stateChangeCallback_ = callback;
+}
+
 void Connection::beginQuery() {
     ENIG_DEBUG("Connection::beginQuery()");
     switch (nextQuery_->type()) {
@@ -412,7 +430,7 @@ void Connection::beginQuery() {
             break;
 
         case Query::Type::Prepare:
-            resource_->sendPrepare(nextQuery_->command(), nextQuery_->statement(), nextQuery_->numParams());
+            resource_->sendPrepare(nextQuery_->statement(), nextQuery_->command(), nextQuery_->numParams());
             break;
 
         case Query::Type::Prepared:
@@ -539,6 +557,10 @@ void Connection::processPollingStatus(Pgsql::ConnectionResource::PollingStatus s
 void Connection::connectionOk() {
     ENIG_DEBUG("Connection::connectionOk()");
     state_ = State::Idle;
+    if (stateChangeCallback_) {
+        stateChangeCallback_(*this, state_);
+    }
+
     if (hasQueuedQuery_) {
         beginQuery();
     }
@@ -547,6 +569,10 @@ void Connection::connectionOk() {
 void Connection::connectionDied() {
     ENIG_DEBUG("Connection::connectionDied(): " << resource_->errorMessage().c_str());
     state_ = State::Dead;
+    if (stateChangeCallback_) {
+        stateChangeCallback_(*this, state_);
+    }
+
     finishQuery(false, nullptr);
 }
 

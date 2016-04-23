@@ -7,6 +7,18 @@ namespace Pgsql {
 
 PreparedParameters::PreparedParameters() {}
 
+PreparedParameters::PreparedParameters(PreparedParameters const & prepared)
+        : paramBuffer_(prepared.paramBuffer_), params_(prepared.params_.size()) {
+    for (unsigned i = 0; i < prepared.params_.size(); i++) {
+        auto ptr = prepared.params_[i];
+        if (ptr == nullptr) {
+            params_[i] = nullptr;
+        } else {
+            params_[i] = ptr - prepared.paramBuffer_.data() + paramBuffer_.data();
+        }
+    }
+}
+
 PreparedParameters::PreparedParameters(Array const & params)
         : params_((ssize_t)params.size()) {
     unsigned i = 0;
@@ -32,12 +44,8 @@ PreparedParameters::PreparedParameters(Array const & params)
 }
 
 
-
-
 ConnectionResource::ConnectionResource(Array params) {
     beginConnection(params);
-    auto debug = fopen("/home/norbyte/debug.log", "rw+");
-    PQtrace (connection_, debug);
 }
 
 ConnectionResource::~ConnectionResource() {
@@ -183,9 +191,9 @@ void ConnectionResource::sendQueryParams(String const & command, PreparedParamet
 /**
  * Sends a request to create a prepared statement with the given parameters, without waiting for completion.
  */
-void ConnectionResource::sendPrepare(String const & command, String const & stmtName, int numParams) {
+void ConnectionResource::sendPrepare(String const & stmtName, String const & command, int numParams) {
     ENIG_DEBUG("PQsendPrepare()");
-    if (PQsendPrepare(connection_, command.c_str(), stmtName.c_str(), numParams, nullptr) != 1) {
+    if (PQsendPrepare(connection_, stmtName.c_str(), command.c_str(), numParams, nullptr) != 1) {
         throw EnigmaException(std::string("Failed to prepare statement: ") + errorMessage());
     }
 }

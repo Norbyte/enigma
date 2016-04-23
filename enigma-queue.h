@@ -55,21 +55,27 @@ public:
 
     typedef std::unique_ptr<CachedPlan> p_CachedPlan;
 
-    const unsigned DefaultPlanCacheSize = 30;
-
-    PlanCache();
-    ~PlanCache();
+    PlanCache() = default;
 
     PlanCache(PlanCache const &) = delete;
     PlanCache & operator = (PlanCache const &) = delete;
 
     CachedPlan const * lookupPlan(std::string const & query) const;
-    void storePlan(std::string const & query, std::string const & statementName);
+    CachedPlan const * assignPlan(std::string const & query);
 
 private:
+    static constexpr char * PlanNamePrefix = "EnigmaPlan_";
+    const unsigned DefaultPlanCacheSize = 30;
+
     unsigned planCacheSize_{ DefaultPlanCacheSize };
+    unsigned nextPlanId_{0};
     std::unordered_map<std::string, p_CachedPlan> plans_;
+
+    CachedPlan const * storePlan(std::string const & query, std::string const & statementName);
+    std::string generatePlanName();
 };
+
+typedef std::unique_ptr<PlanCache> p_PlanCache;
 
 
 class Pool {
@@ -90,13 +96,20 @@ private:
     // Number of connections we'll keep alive (even if they're idle)
     unsigned poolSize_{ DefaultPoolSize };
     unsigned nextConnectionIndex_{ 0 };
+    // Queries waiting for execution
     std::queue<QueryAwait *> queue_;
     std::vector<unsigned> idleConnections_;
     std::unordered_map<unsigned, sp_Connection> connectionMap_;
+    std::unordered_map<unsigned, p_PlanCache> planCaches_;
+    // Statements we're currently preparing
+    std::unordered_map<unsigned, QueryAwait *> preparing_;
+    // Queries to execute after the statement was prepared
+    std::unordered_map<unsigned, p_Query> pendingPrepare_;
 
 
     unsigned assignConnectionId();
     void addConnection(Array const & options);
+    void removeConnection(unsigned connectionId);
     void executeNext();
     void queryCompleted(unsigned connectionId);
 };

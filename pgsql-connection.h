@@ -20,6 +20,7 @@ class ResultResource;
 class PreparedParameters {
 public:
     PreparedParameters();
+    PreparedParameters(PreparedParameters const & prepared);
     PreparedParameters(Array const & params);
 
     inline int count() const {
@@ -126,7 +127,7 @@ public:
     /**
      * Sends a request to create a prepared statement with the given parameters, without waiting for completion.
      */
-    void sendPrepare(String const & command, String const & stmtName, int numParams);
+    void sendPrepare(String const & stmtName, String const & command, int numParams);
 
     /**
      * Sends a request to execute a prepared statement with given parameters, without waiting for the result(s).

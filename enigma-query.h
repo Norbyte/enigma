@@ -35,8 +35,10 @@ public:
 
     Query(RawInit, String const & command);
     Query(ParameterizedInit, String const & command, Array const & params);
+    Query(ParameterizedInit, String const & command, Pgsql::PreparedParameters const & params);
     Query(PrepareInit, String const & stmtName, String const & command, unsigned numParams);
     Query(PreparedInit, String const & stmtName, Array const & params);
+    Query(PreparedInit, String const & stmtName, Pgsql::PreparedParameters const & params);
 
     Query(const Query &) = delete;
     Query & operator = (const Query &) = delete;
@@ -137,11 +139,14 @@ public:
     };
 
     typedef std::function<void(bool, Pgsql::ResultResource *, std::string)> QueryCompletionCallback;
+    typedef std::function<void(Connection &, State)> StateChangeCallback;
 
     Connection(Array const & options);
 
     void executeQuery(p_Query query, QueryCompletionCallback callback);
     void cancelQuery();
+
+    void setStateChangeCallback(StateChangeCallback callback);
 
     inline bool inTransaction() const {
         return resource_->inTransaction();
@@ -182,6 +187,7 @@ private:
     p_Query nextQuery_;
     QueryCompletionCallback queryCallback_;
     std::string lastError_;
+    StateChangeCallback stateChangeCallback_;
 
     void beginConnect();
     void beginQuery();
@@ -222,7 +228,14 @@ public:
     virtual void unserialize(Cell & result) override;
     void assign(sp_Connection connection);
     void begin(CompletionCallback callback);
-    void cancel();
+    void cancelQuery();
+
+    inline Query const & query() const {
+        always_assert(query_);
+        return *query_;
+    }
+
+    p_Query swapQuery(p_Query query);
 
 protected:
     sp_Connection connection_;

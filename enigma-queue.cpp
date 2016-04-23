@@ -171,10 +171,21 @@ PlanCache::CachedPlan const * PlanCache::lookupPlan(std::string const & query) c
     }
 }
 
-void PlanCache::storePlan(std::string const & query, std::string const & statementName) {
+PlanCache::CachedPlan const * PlanCache::assignPlan(std::string const & query) {
+    auto name = generatePlanName();
+    return storePlan(query, name);
+}
+
+PlanCache::CachedPlan const * PlanCache::storePlan(std::string const & query, std::string const & statementName) {
     auto plan = p_CachedPlan(new CachedPlan(query));
+    auto planPtr = plan.get();
     plan->statementName = statementName;
     plans_.insert(std::make_pair(query, std::move(plan)));
+    return planPtr;
+}
+
+std::string PlanCache::generatePlanName() {
+    return PlanNamePrefix + std::to_string(nextPlanId_++);
 }
 
 
@@ -191,7 +202,28 @@ void Pool::addConnection(Array const & options) {
     auto connection = std::make_shared<Connection>(options);
     auto connectionId = nextConnectionIndex_++;
     connectionMap_.insert(std::make_pair(connectionId, connection));
+    auto planCache = p_PlanCache(new PlanCache());
+    planCaches_.insert(std::make_pair(connectionId, std::move(planCache)));
     idleConnections_.push_back(connectionId);
+}
+
+void Pool::removeConnection(unsigned connectionId) {
+    auto prepareIt = preparing_.find(connectionId);
+    if (prepareIt != preparing_.end()) {
+        preparing_.erase(prepareIt);
+    }
+
+    auto pendingPrepareIt = pendingPrepare_.find(connectionId);
+    if (pendingPrepareIt != pendingPrepare_.end()) {
+        pendingPrepare_.erase(pendingPrepareIt);
+    }
+
+    planCaches_.erase(connectionId);
+    connectionMap_.erase(connectionId);
+    auto idleIt = std::find(idleConnections_.begin(), idleConnections_.end(), connectionId);
+    if (idleIt != idleConnections_.end()) {
+        idleConnections_.erase(idleIt);
+    }
 }
 
 QueryAwait * Pool::enqueue(p_Query query) {
@@ -214,6 +246,7 @@ QueryAwait * Pool::enqueue(p_Query query) {
 
 unsigned Pool::assignConnectionId() {
     always_assert(!idleConnections_.empty());
+    // todo: random, RR selection
     auto index = rand() % idleConnections_.size();
     unsigned connectionId = idleConnections_[index];
     if (index < idleConnections_.size() - 1) {
@@ -233,6 +266,42 @@ void Pool::executeNext() {
 
     auto query = queue_.front();
     queue_.pop();
+
+    auto const & q = query->query();
+
+    /*
+     * Check if the query is a candidate for automatic prepared statement generation
+     * and if planning has already taken place for this query.
+     */
+    if (q.flags() & Query::kCachePlan && q.type() == Query::Type::Parameterized) {
+        auto plan = planCaches_[connectionId]->lookupPlan(q.command().c_str());
+        if (plan) {
+            /*
+             * Query was already prepared on this connection, use the
+             * auto assigned statement handle.
+             */
+            ENIG_DEBUG("Begin executing cached prepared stmt");
+            std::unique_ptr<Query> execQuery(new Query(
+                    Query::PreparedInit{}, plan->statementName, q.params()));
+            query->swapQuery(std::move(execQuery));
+        } else {
+            /*
+             * Begin preparing the query and store the original query params
+             * for later execution.
+             */
+            ENIG_DEBUG("Begin preparing");
+            plan = planCaches_[connectionId]->assignPlan(q.command().c_str());
+            std::unique_ptr<Query> planQuery(new Query(
+                    Query::PrepareInit{}, plan->statementName, plan->planInfo.rewrittenCommand,
+                    plan->planInfo.parameterCount));
+            auto originalQuery = query->swapQuery(std::move(planQuery));
+            preparing_.insert(std::make_pair(connectionId, query));
+            pendingPrepare_.insert(std::make_pair(connectionId, std::move(originalQuery)));
+        }
+    } else {
+        ENIG_DEBUG("Begin executing query");
+    }
+
     auto callback = [this, connectionId] { this->queryCompleted(connectionId); };
     query->assign(connection);
     query->begin(callback);
