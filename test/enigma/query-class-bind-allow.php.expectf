@@ -1,0 +1,9 @@
+array(1) {
+  [0]=>
+  object(Test)#%d (2) {
+    ["b"]=>
+    NULL
+    ["a"]=>
+    int(1)
+  }
+}

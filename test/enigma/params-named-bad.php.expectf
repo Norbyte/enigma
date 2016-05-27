@@ -1,0 +1,7 @@
+Fatal error: Uncaught exception 'Enigma\ErrorResult' with message 'Parameter count mismatch; expected 2 named parameters, got 1
+' in %s/test/enigma/connect.inc:%d
+Stack trace:
+#0 %s/test/enigma/connect.inc(%d): Enigma\Pool->query()
+#1 %s/test/enigma/connect.inc(%d): query()
+#2 %s/test/enigma/params-named-bad.php(%d): querya()
+#3 {main}

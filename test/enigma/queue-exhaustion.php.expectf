@@ -1,0 +1,5 @@
+Fatal error: Uncaught exception 'Enigma\ErrorResult' with message 'Enigma queue size exceeded
+' in %s/test/enigma/queue-exhaustion.php:%d
+Stack trace:
+#0 %s/test/enigma/queue-exhaustion.php(%d): Enigma\Pool->query()
+#1 {main}

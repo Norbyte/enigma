@@ -1,0 +1,6 @@
+Fatal error: Uncaught exception 'Enigma\ErrorResult' with message 'Missing bound parameter: b' in %s/test/enigma/connect.inc:%d
+Stack trace:
+#0 %s/test/enigma/connect.inc(%d): Enigma\Pool->query()
+#1 %s/test/enigma/connect.inc(%d): query()
+#2 %s/test/enigma/params-named-bad2.php(%d): querya()
+#3 {main}

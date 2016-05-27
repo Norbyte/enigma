@@ -1,0 +1,7 @@
+array(1) {
+  [0]=>
+  object(Test)#%d (1) {
+    ["b"]=>
+    NULL
+  }
+}

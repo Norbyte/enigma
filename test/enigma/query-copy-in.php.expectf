@@ -1,0 +1,6 @@
+Fatal error: Uncaught exception 'Enigma\ErrorResult' with message 'Row COPY not supported' in %s/test/enigma/connect.inc:%d
+Stack trace:
+#0 %s/test/enigma/connect.inc(%d): HH\Asio\join()
+#1 %s/test/enigma/connect.inc(%d): query()
+#2 %s/test/enigma/query-copy-in.php(%d): querya()
+#3 {main}

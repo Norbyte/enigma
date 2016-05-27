@@ -1,0 +1,6 @@
+Fatal error: Uncaught exception 'Enigma\ErrorResult' with message 'FATAL:  password authentication failed for user "bad"
+FATAL:  password authentication failed for user "bad"
+' in %s/test/enigma/connect-bad.php:%d
+Stack trace:
+#0 %s/test/enigma/connect-bad.php(%d): HH\Asio\join()
+#1 {main}

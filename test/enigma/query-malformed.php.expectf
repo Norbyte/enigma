@@ -1,0 +1,8 @@
+Fatal error: Uncaught exception 'Enigma\ErrorResult' with message 'ERROR:  column "aaaaa" does not exist
+LINE 1: select aaaaa
+               ^
+' in %s/test/enigma/connect.inc:%d
+Stack trace:
+#0 %s/test/enigma/connect.inc(%d): HH\Asio\join()
+#1 %s/test/enigma/query-malformed.php(%d): query()
+#2 {main}
