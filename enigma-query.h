@@ -11,6 +11,8 @@
 namespace HPHP {
 namespace Enigma {
 
+[[ noreturn ]] void throwEnigmaException(std::string const & message);
+
 class Query {
 public:
     // Execute an SQL command, without any parameters
@@ -195,6 +197,7 @@ private:
     void queryCompleted();
     void processPollingStatus(Pgsql::ConnectionResource::PollingStatus status);
     void connectionOk();
+    void markAsDead(std::string const & reason);
     void connectionDied();
 };
 

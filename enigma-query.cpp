@@ -8,8 +8,6 @@ namespace Enigma {
 void throwEnigmaException(std::string const & message) {
     auto error = ErrorResult::newInstance(message);
     throw error;
-    // SystemLib::throwExceptionObject()
-    // throw_object(exception_type, params, true /* init */);
 }
 
 SocketIoHandler::SocketIoHandler(AsioEventBase* base, int fd, QueryAwait * event)
@@ -507,6 +505,9 @@ void Connection::queryCompleted() {
             case Pgsql::ResultResource::Status::CopyIn:
             case Pgsql::ResultResource::Status::CopyOut:
                 lastError_ = "Row COPY not supported";
+                // Kill off the connection, as we cannot cancel a COPY
+                // command any other way :(
+                markAsDead(lastError_);
                 succeeded = false;
                 break;
 
@@ -568,12 +569,17 @@ void Connection::connectionOk() {
 
 void Connection::connectionDied() {
     ENIG_DEBUG("Connection::connectionDied(): " << resource_->errorMessage().c_str());
+    markAsDead(resource_->errorMessage());
+    finishQuery(false, nullptr);
+}
+
+void Connection::markAsDead(std::string const & reason) {
+    ENIG_DEBUG("Connection::connectionDied(): " << reason.c_str());
     state_ = State::Dead;
+    lastError_ = reason;
     if (stateChangeCallback_) {
         stateChangeCallback_(*this, state_);
     }
-
-    finishQuery(false, nullptr);
 }
 
 

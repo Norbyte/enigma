@@ -230,11 +230,21 @@ std::unique_ptr<ResultResource> ConnectionResource::getResult() {
         return std::unique_ptr<ResultResource>();
     } else {
         /*
-         * We don't support multiple result sets, so discard all
-         * subsequent PQresult-s
+         * Only fetch one result when copying in/out, as the fetch will block
+         * indefinitely until all rows are transferred using PQputCopy/PQgetCopy.
          */
-        while (auto discarded = PQgetResult(connection_)) {
-            PQclear(discarded);
+        auto status = PQresultStatus(result);
+
+        if (status != PGRES_COPY_IN &&
+            status != PGRES_COPY_OUT &&
+            status != PGRES_COPY_BOTH) {
+            /*
+             * We don't support multiple result sets, so discard all
+             * subsequent PQresult-s
+             */
+            while (auto discarded = PQgetResult(connection_)) {
+                PQclear(discarded);
+            }
         }
 
         return std::unique_ptr<ResultResource>(
