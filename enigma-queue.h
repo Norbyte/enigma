@@ -41,6 +41,7 @@ private:
     std::tuple<std::string, unsigned> parseNumberedParameters() const;
     std::tuple<std::string, std::vector<std::string> > parseNamedParameters() const;
     bool isValidPlaceholder(std::size_t pos) const;
+    bool isValidNamedPlaceholder(std::size_t pos) const;
     std::size_t namedPlaceholderLength(std::size_t pos) const;
 };
 

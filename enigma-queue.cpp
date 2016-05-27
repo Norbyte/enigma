@@ -19,6 +19,11 @@ Array PlanInfo::mapParameters(Array const & params) {
 }
 
 Array PlanInfo::mapNamedParameters(Array const & params) {
+    if (parameterNameMap.size() != params.size()) {
+        throw Exception(std::string("Parameter count mismatch; expected ") + std::to_string(parameterNameMap.size())
+            + " named parameters, got " + std::to_string(params.size()));
+    }
+
     Array mapped;
     for (unsigned i = 0; i < parameterNameMap.size(); i++) {
         auto key = String(parameterNameMap[i]);
@@ -34,6 +39,11 @@ Array PlanInfo::mapNamedParameters(Array const & params) {
 }
 
 Array PlanInfo::mapNumberedParameters(Array const & params) {
+    if (parameterCount != params.size()) {
+        throw Exception(std::string("Parameter count mismatch; expected ") + std::to_string(parameterCount)
+            + " parameters, got " + std::to_string(params.size()));
+    }
+
     Array mapped;
     for (unsigned i = 0; i < parameterCount; i++) {
         auto value = params->nvGet(i);
@@ -76,11 +86,34 @@ bool PlanInfo::isValidPlaceholder(std::size_t pos) const {
         return false;
     }
 
-    // Check if the following byte is in [0-9a-zA-Z \r\n\t]
+    // Check if the following byte is in [0-9a-zA-Z: \r\n\t]
+    // Allow ":", as parameter typecasting is fairly common
     if (
             pos < command.length() - 1
             && !isspace(command[pos + 1])
             && !isalnum(command[pos + 1])
+            && command[pos + 1] != ':'
+            ) {
+        return false;
+    }
+
+    return true;
+}
+
+bool PlanInfo::isValidNamedPlaceholder(std::size_t pos) const {
+    // Check if the preceding byte is in [ \r\n\t]
+    if (
+            pos != 0
+            && !isspace(command[pos - 1])
+            ) {
+        return false;
+    }
+
+    // Check if the following byte is in [0-9a-zA-Z_]
+    if (
+            pos < command.length() - 1
+            && !isalnum(command[pos + 1])
+            && command[pos + 1] != '_'
             ) {
         return false;
     }
@@ -89,14 +122,14 @@ bool PlanInfo::isValidPlaceholder(std::size_t pos) const {
 }
 
 std::size_t PlanInfo::namedPlaceholderLength(std::size_t pos) const {
-    if (!isValidPlaceholder(pos)) {
+    if (!isValidNamedPlaceholder(pos)) {
         return 0;
     }
 
-    auto i = pos;
+    auto i = pos + 1;
     for (; i < command.length() && (isalnum(command[i]) || command[i] == '_'); i++);
 
-    return i - pos;
+    return i - pos - 1;
 }
 
 std::tuple<std::string, unsigned> PlanInfo::parseNumberedParameters() const {
@@ -124,13 +157,12 @@ std::tuple<std::string, unsigned> PlanInfo::parseNumberedParameters() const {
     }
 
     rewritten.write(command.data() + lastWrittenPos, command.length() - lastWrittenPos);
-    ENIG_DEBUG(rewritten.str());
     return std::make_tuple(rewritten.str(), numParams);
 }
 
 std::tuple<std::string, std::vector<std::string> > PlanInfo::parseNamedParameters() const {
-    unsigned numParams{0};
     std::vector<std::string> params;
+    std::unordered_map<std::string, unsigned> paramMap;
     std::ostringstream rewritten;
 
     std::size_t pos{0}, lastWrittenPos{0};
@@ -145,9 +177,21 @@ std::tuple<std::string, std::vector<std::string> > PlanInfo::parseNamedParameter
 
         auto placeholderLength = namedPlaceholderLength(pos++);
         if (placeholderLength > 0) {
-            rewritten << '$';
-            rewritten << (++numParams);
-            params.push_back(command.substr(pos, placeholderLength));
+            std::string param = command.substr(pos, placeholderLength);
+            auto paramIt = paramMap.find(param);
+            if (paramIt != paramMap.end()) {
+                rewritten << '$';
+                rewritten << paramIt->second;
+            } else {
+                params.push_back(param);
+                paramMap.insert(std::make_pair(param, params.size()));
+
+                rewritten << '$';
+                rewritten << params.size();
+            }
+
+            pos += placeholderLength;
+            lastWrittenPos += placeholderLength;
         } else {
             rewritten << ':';
         }
@@ -352,12 +396,17 @@ Object HHVM_METHOD(PoolInterface, query, Object const & queryObj) {
 
     auto queryData = Native::data<QueryInterface>(queryObj);
 
-    PlanInfo planInfo(queryData->command().c_str());
-    auto bindableParams = planInfo.mapParameters(queryData->params());
-    auto query = new Query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
-    query->setFlags(queryData->flags());
-    auto waitEvent = poolInterface->pool->enqueue(std::unique_ptr<Query>(query));
-    return Object{waitEvent->getWaitHandle()};
+    try {
+        PlanInfo planInfo(queryData->command().c_str());
+        auto bindableParams = planInfo.mapParameters(queryData->params());
+        auto query = new Query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
+        query->setFlags(queryData->flags());
+        auto waitEvent = poolInterface->pool->enqueue(std::unique_ptr<Query>(query));
+
+        return Object{waitEvent->getWaitHandle()};
+    } catch (std::exception & e) {
+        throwEnigmaException(e.what());
+    }
 }
 
 
