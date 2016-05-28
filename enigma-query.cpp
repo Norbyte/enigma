@@ -72,7 +72,16 @@ p_Query QueryAwait::swapQuery(p_Query query) {
 }
 
 void QueryAwait::socketReady(bool read, bool write) {
+    if (completed_) {
+        return;
+    }
+
     connection_->socketReady(read, write);
+
+    if (completed_) {
+        // Notify the client that the async operation completed
+        markAsFinished();
+    }
 
     /*
      * Ignore socket state changes if the IO handler was unregistered
@@ -121,8 +130,7 @@ void QueryAwait::queryCompleted(bool succeeded, std::unique_ptr<Pgsql::ResultRes
     result_ = std::move(result);
     lastError_ = errorInfo;
     callback_();
-    // Notify the client that the async operation completed
-    markAsFinished();
+    completed_ = true;
 }
 
 void QueryAwait::unserialize(Cell & result) {
@@ -142,11 +150,10 @@ void QueryAwait::attachSocketIoHandler() {
     ENIG_DEBUG("QueryAwait::attachSocketIoHandler() " << socket);
     always_assert(socket > 0);
     auto eventBase = getSingleton<AsioEventBase>();
-    auto handler = std::make_shared<SocketIoHandler>(eventBase.get(), socket, this);
-    handler->registerHandler(AsioEventHandler::READ_WRITE | AsioEventHandler::PERSIST);
+    socketIoHandler_ = std::make_shared<SocketIoHandler>(eventBase.get(), socket, this);
     writing_ = true;
-    socketIoHandler_ = handler;
     socket_ = socket;
+    socketIoHandler_->registerHandler(AsioEventHandler::READ_WRITE | AsioEventHandler::PERSIST);
 }
 
 void QueryAwait::detachSocketIoHandler() {

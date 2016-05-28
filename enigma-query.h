@@ -257,6 +257,7 @@ private:
     int socket_{ -1 };
     bool succeeded_;
     bool writing_{ true };
+    bool completed_{ false };
     std::unique_ptr<Pgsql::ResultResource> result_;
     std::string lastError_;
     p_Query query_{ nullptr };
