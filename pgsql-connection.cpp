@@ -333,6 +333,11 @@ void ConnectionResource::beginConnection(Array const & params) {
         throw EnigmaException("Failed to initialize pgsql connection");
     }
 
+    if (status() == Status::Bad) {
+        throw EnigmaException(std::string("Failed to initialize pgsql connection: ")
+                              + errorMessage());
+    }
+
     if (PQsetnonblocking(connection_, 1) != 0) {
         throw EnigmaException("Failed to set nonblocking mode on connection");
     }
