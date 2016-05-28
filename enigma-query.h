@@ -32,7 +32,8 @@ public:
     };
 
     enum Flags {
-        kCachePlan = 0x01
+        kCachePlan = 0x01,
+        kBinary = 0x02
     };
 
     Query(RawInit, String const & command);

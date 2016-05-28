@@ -13,6 +13,9 @@ class Query {
 
     <<__Native>>
     function enablePlanCache(bool $enabled) : void;
+
+    <<__Native>>
+    function setBinary(bool $enabled) : void;
 }
 
 

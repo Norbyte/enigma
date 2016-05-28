@@ -23,10 +23,12 @@ enum TypeOid {
     kOidXml = 142,
     kOidFloat4 = 700,
     kOidFloat8 = 701,
+    kOidUnknown = 705,
     kOidInt2Array = 1005,
     kOidInt4Array = 1007,
     kOidFloat4Array = 1021,
     kOidFloat8Array = 1022,
+    kOidBpchar = 1042,
     kOidVarchar = 1043,
     kOidDate = 1082,
     kOidTime = 1083,
@@ -126,6 +128,14 @@ int ResultResource::columnNumber(String const & name) const {
 }
 
 /**
+ * Returns whether format of the given column is binary.
+ * Column numbers start at 0.
+ */
+bool ResultResource::columnBinary(int column) const {
+    return PQfformat(result_, column) == 1;
+}
+
+/**
  * Returns the data type associated with the given column number.
  * The integer returned is the internal OID number of the type. Column numbers start at 0.
  */
@@ -161,41 +171,119 @@ String ResultResource::value(int row, int column) const {
 Variant ResultResource::typedValue(int row, int column, Oid oid) const {
     if (PQgetisnull(result_, row, column) == 1) {
         return Variant(Variant::NullInit{});
+    } else if (columnBinary(column)) {
+        return binaryValue(row, column, oid);
     } else {
-        auto value = PQgetvalue(result_, row, column);
-        auto length = PQgetlength(result_, row, column);
+        return textValue(row, column, oid);
+    }
+}
 
-        switch (oid) {
-            case kOidBool:
-                return Variant(value[0] == 't');
+/**
+ * Returns a single binary-formatted field value of one row of the result.
+ * Row and column numbers start at 0.
+ */
+Variant ResultResource::binaryValue(int row, int column, Oid oid) const {
+    auto value = PQgetvalue(result_, row, column);
+    auto length = PQgetlength(result_, row, column);
 
-            case kOidInt2:
-            case kOidInt4:
-            case kOidInt8:
-            case kOidOid:
-            case kOidXid:
-            case kOidCid:
-                return Variant(atol(value));
+    switch (oid) {
+        case kOidBool:
+            return Variant(value[0] == 1);
 
-            case kOidFloat4:
-            case kOidFloat8:
-                return Variant(atof(value));
-
-            case kOidInt2Array:
-            case kOidInt4Array:
-            case kOidFloat4Array:
-            case kOidFloat8Array:
-            case kOidDate:
-            case kOidTime:
-            case kOidTimestamp:
-            case kOidTimestamptz:
-            case kOidInterval:
-            case kOidNumeric: // TODO !!!
-            case kOidJson:
-
-            default:
-                return String(value, (size_t) length, CopyStringMode{});
+        case kOidInt2: {
+            uint16_t i = __builtin_bswap16(*reinterpret_cast<uint16_t *>(value));
+            return Variant(*reinterpret_cast<int16_t *>(&i));
         }
+
+        case kOidInt4:
+        case kOidOid:
+        case kOidXid:
+        case kOidCid: {
+            uint32_t i = __builtin_bswap32(*reinterpret_cast<uint32_t *>(value));
+            return Variant(*reinterpret_cast<int32_t *>(&i));
+        }
+
+        case kOidInt8: {
+            uint64_t i = ((uint64_t)__builtin_bswap32(*reinterpret_cast<uint32_t *>(value)) << 32) |
+                         __builtin_bswap32(*reinterpret_cast<uint32_t *>(value + 4));
+            return Variant(*reinterpret_cast<int64_t *>(&i));
+        }
+
+        case kOidFloat4: {
+            uint32_t i = __builtin_bswap32(*reinterpret_cast<uint32_t *>(value));
+            return Variant(*reinterpret_cast<float *>(&i));
+        }
+
+        case kOidFloat8: {
+            uint64_t i = ((uint64_t)__builtin_bswap32(*reinterpret_cast<uint32_t *>(value)) << 32) |
+                         __builtin_bswap32(*reinterpret_cast<uint32_t *>(value + 4));
+            return Variant(*reinterpret_cast<double *>(&i));
+        }
+
+        case kOidBytea:
+        case kOidChar:
+        case kOidText:
+        case kOidJson:
+        case kOidXml:
+        case kOidUnknown:
+        case kOidBpchar:
+        case kOidVarchar:
+            return String(value, (size_t) length, CopyStringMode{});
+
+        case kOidInt2Array:
+        case kOidInt4Array:
+        case kOidFloat4Array:
+        case kOidFloat8Array:
+        case kOidDate:
+        case kOidTime:
+        case kOidTimestamp:
+        case kOidTimestamptz:
+        case kOidInterval:
+        case kOidNumeric: // TODO !!!
+        default:
+            throw EnigmaException(std::string("Cannot receive type using binary protocol: OID ")
+                + std::to_string(oid));
+    }
+}
+
+/**
+ * Returns a single text-formatted field value of one row of the result.
+ * Row and column numbers start at 0.
+ */
+Variant ResultResource::textValue(int row, int column, Oid oid) const {
+    auto value = PQgetvalue(result_, row, column);
+    auto length = PQgetlength(result_, row, column);
+
+    switch (oid) {
+        case kOidBool:
+            return Variant(value[0] == 't');
+
+        case kOidInt2:
+        case kOidInt4:
+        case kOidInt8:
+        case kOidOid:
+        case kOidXid:
+        case kOidCid:
+            return Variant(atol(value));
+
+        case kOidFloat4:
+        case kOidFloat8:
+            return Variant(atof(value));
+
+        case kOidInt2Array:
+        case kOidInt4Array:
+        case kOidFloat4Array:
+        case kOidFloat8Array:
+        case kOidDate:
+        case kOidTime:
+        case kOidTimestamp:
+        case kOidTimestamptz:
+        case kOidInterval:
+        case kOidNumeric: // TODO !!!
+        case kOidJson:
+
+        default:
+            return String(value, (size_t) length, CopyStringMode{});
     }
 }
 

@@ -181,9 +181,9 @@ void ConnectionResource::sendQuery(String const & command) {
 /**
  * Submits a command and separate parameters to the server without waiting for the result(s).
  */
-void ConnectionResource::sendQueryParams(String const & command, PreparedParameters const & params) {
+void ConnectionResource::sendQueryParams(String const & command, PreparedParameters const & params, bool binary) {
     ENIG_DEBUG("PQsendQueryParams()");
-    if (PQsendQueryParams(connection_, command.c_str(), params.count(), nullptr, params.buffer(), nullptr, nullptr, 0) != 1) {
+    if (PQsendQueryParams(connection_, command.c_str(), params.count(), nullptr, params.buffer(), nullptr, nullptr, binary ? 1 : 0) != 1) {
         throw EnigmaException(std::string("Failed to send query: ") + errorMessage());
     }
 }
@@ -201,9 +201,9 @@ void ConnectionResource::sendPrepare(String const & stmtName, String const & com
 /**
  * Sends a request to execute a prepared statement with given parameters, without waiting for the result(s).
  */
-void ConnectionResource::sendQueryPrepared(String const & stmtName, PreparedParameters const & params) {
+void ConnectionResource::sendQueryPrepared(String const & stmtName, PreparedParameters const & params, bool binary) {
     ENIG_DEBUG("PQsendQueryPrepared()");
-    if (PQsendQueryPrepared(connection_, stmtName.c_str(), params.count(), params.buffer(), nullptr, nullptr, 0) != 1) {
+    if (PQsendQueryPrepared(connection_, stmtName.c_str(), params.count(), params.buffer(), nullptr, nullptr, binary ? 1 : 0) != 1) {
         throw EnigmaException(std::string("Failed to send prepared query: ") + errorMessage());
     }
 }

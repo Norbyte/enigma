@@ -96,6 +96,12 @@ public:
     int columnNumber(String const & name) const;
 
     /**
+     * Returns whether format of the given column is binary.
+     * Column numbers start at 0.
+     */
+    bool columnBinary(int column) const;
+
+    /**
      * Returns the data type associated with the given column number.
      * The integer returned is the internal OID number of the type. Column numbers start at 0.
      */
@@ -132,6 +138,18 @@ public:
 
 private:
     PGresult * result_;
+
+    /**
+     * Returns a single binary-formatted field value of one row of the result.
+     * Row and column numbers start at 0.
+     */
+    Variant binaryValue(int row, int column, Oid type) const;
+
+    /**
+     * Returns a single text-formatted field value of one row of the result.
+     * Row and column numbers start at 0.
+     */
+    Variant textValue(int row, int column, Oid type) const;
 };
 
 }

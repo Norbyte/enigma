@@ -442,13 +442,14 @@ void Connection::setStateChangeCallback(StateChangeCallback callback) {
 
 void Connection::beginQuery() {
     ENIG_DEBUG("Connection::beginQuery()");
+    bool binary = (nextQuery_->flags() & Query::kBinary) == Query::kBinary;
     switch (nextQuery_->type()) {
         case Query::Type::Raw:
             resource_->sendQuery(nextQuery_->command());
             break;
 
         case Query::Type::Parameterized:
-            resource_->sendQueryParams(nextQuery_->command(), nextQuery_->params());
+            resource_->sendQueryParams(nextQuery_->command(), nextQuery_->params(), binary);
             break;
 
         case Query::Type::Prepare:
@@ -456,7 +457,7 @@ void Connection::beginQuery() {
             break;
 
         case Query::Type::Prepared:
-            resource_->sendQueryPrepared(nextQuery_->statement(), nextQuery_->params());
+            resource_->sendQueryPrepared(nextQuery_->statement(), nextQuery_->params(), binary);
             break;
     }
 

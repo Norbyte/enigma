@@ -1,0 +1,31 @@
+array(1) {
+  [0]=>
+  array(13) {
+    ["i2"]=>
+    int(1234)
+    ["i4"]=>
+    int(12345678)
+    ["i8"]=>
+    int(1234567812345678)
+    ["f4"]=>
+    float(2.5)
+    ["f8"]=>
+    float(2.5)
+    ["b1"]=>
+    bool(false)
+    ["b2"]=>
+    bool(true)
+    ["t"]=>
+    string(4) "aaaa"
+    ["c"]=>
+    string(1) " "
+    ["vc"]=>
+    string(6) "asdasd"
+    ["j"]=>
+    string(2) "{}"
+    ["x"]=>
+    string(5) "<a />"
+    ["n"]=>
+    NULL
+  }
+}

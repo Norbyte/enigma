@@ -437,13 +437,26 @@ void HHVM_METHOD(QueryInterface, enablePlanCache, bool enabled) {
 }
 
 
+void HHVM_METHOD(QueryInterface, setBinary, bool enabled) {
+    auto query = Native::data<QueryInterface>(this_);
+    auto flags = query->flags();
+    if (enabled) {
+        query->setFlags(flags | Query::kBinary);
+    } else {
+        query->setFlags(flags & ~Query::kBinary);
+    }
+}
+
+
 void registerQueueClasses() {
     ENIGMA_NAMED_ME(PoolInterface, Pool, query);
     Native::registerNativeDataInfo<PoolInterface>(s_PoolInterface.get());
 
     ENIGMA_NAMED_ME(QueryInterface, Query, __construct);
     ENIGMA_NAMED_ME(QueryInterface, Query, enablePlanCache);
+    ENIGMA_NAMED_ME(QueryInterface, Query, setBinary);
     HHVM_RCC_INT(QueryInterfaceNS, CACHE_PLAN, Query::kCachePlan);
+    HHVM_RCC_INT(QueryInterfaceNS, BINARY, Query::kBinary);
     Native::registerNativeDataInfo<QueryInterface>(s_QueryInterface.get());
 }
 

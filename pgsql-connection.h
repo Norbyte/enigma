@@ -122,7 +122,7 @@ public:
     /**
      * Submits a command and separate parameters to the server without waiting for the result(s).
      */
-    void sendQueryParams(String const & command, PreparedParameters const & params);
+    void sendQueryParams(String const & command, PreparedParameters const & params, bool binary);
 
     /**
      * Sends a request to create a prepared statement with the given parameters, without waiting for completion.
@@ -132,7 +132,7 @@ public:
     /**
      * Sends a request to execute a prepared statement with given parameters, without waiting for the result(s).
      */
-    void sendQueryPrepared(String const & stmtName, PreparedParameters const & params);
+    void sendQueryPrepared(String const & stmtName, PreparedParameters const & params, bool binary);
 
     /**
      * Submits a request to obtain information about the specified prepared statement, without waiting for completion.
