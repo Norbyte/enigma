@@ -81,6 +81,7 @@ void QueryAwait::socketReady(bool read, bool write) {
     if (completed_) {
         // Notify the client that the async operation completed
         markAsFinished();
+        return;
     }
 
     /*
@@ -150,13 +151,17 @@ void QueryAwait::attachSocketIoHandler() {
     ENIG_DEBUG("QueryAwait::attachSocketIoHandler() " << socket);
     always_assert(socket > 0);
     auto eventBase = getSingleton<AsioEventBase>();
+    assert(!eventBase->isInEventBaseThread());
     socketIoHandler_ = std::make_shared<SocketIoHandler>(eventBase.get(), socket, this);
     writing_ = true;
     socket_ = socket;
-    socketIoHandler_->registerHandler(AsioEventHandler::READ_WRITE | AsioEventHandler::PERSIST);
+    eventBase->runInEventBaseThread([this] {
+        this->socketIoHandler_->registerHandler(AsioEventHandler::READ_WRITE | AsioEventHandler::PERSIST);
+    });
 }
 
 void QueryAwait::detachSocketIoHandler() {
+    assert(getSingleton<AsioEventBase>()->isInEventBaseThread());
     if (socketIoHandler_) {
         ENIG_DEBUG("QueryAwait::detachSocketIoHandler() " << socket_);
         socketIoHandler_->unregisterHandler();
@@ -165,6 +170,7 @@ void QueryAwait::detachSocketIoHandler() {
 }
 
 void QueryAwait::fdChanged() {
+    assert(getSingleton<AsioEventBase>()->isInEventBaseThread());
     auto socket = connection_->socket();
     ENIG_DEBUG("QueryAwait::fdChanged() " << socket);
     socketIoHandler_->unregisterHandler();
