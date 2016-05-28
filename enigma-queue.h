@@ -107,6 +107,7 @@ private:
     // Queries to execute after the statement was prepared
     std::unordered_map<unsigned, p_Query> pendingPrepare_;
 
+    Mutex mutex_;
 
     unsigned assignConnectionId();
     void addConnection(Array const & options);

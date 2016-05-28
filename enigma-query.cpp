@@ -88,8 +88,7 @@ void QueryAwait::socketReady(bool read, bool write) {
          * retry the connection with different options (eg. a non-SSL connection after
          * SSL connection was rejected), so we need to resubscribe if the socket changed.
          */
-        detachSocketIoHandler();
-        attachSocketIoHandler();
+        fdChanged();
     } else if (connection_->isWriting() != writing_) {
         /*
          * We should only subscribe to WRITE events if libpq is waiting for a write
@@ -139,21 +138,33 @@ void QueryAwait::unserialize(Cell & result) {
 }
 
 void QueryAwait::attachSocketIoHandler() {
-    ENIG_DEBUG("QueryAwait::attachSocketIoHandler()");
+    auto socket = connection_->socket();
+    ENIG_DEBUG("QueryAwait::attachSocketIoHandler() " << socket);
+    always_assert(socket > 0);
     auto eventBase = getSingleton<AsioEventBase>();
-    auto handler = std::make_shared<SocketIoHandler>(eventBase.get(), connection_->socket(), this);
+    auto handler = std::make_shared<SocketIoHandler>(eventBase.get(), socket, this);
     handler->registerHandler(AsioEventHandler::READ_WRITE | AsioEventHandler::PERSIST);
     writing_ = true;
     socketIoHandler_ = handler;
-    socket_ = connection_->socket();
+    socket_ = socket;
 }
 
 void QueryAwait::detachSocketIoHandler() {
     if (socketIoHandler_) {
-        ENIG_DEBUG("QueryAwait::detachSocketIoHandler()");
+        ENIG_DEBUG("QueryAwait::detachSocketIoHandler() " << socket_);
         socketIoHandler_->unregisterHandler();
         socketIoHandler_.reset();
     }
+}
+
+void QueryAwait::fdChanged() {
+    auto socket = connection_->socket();
+    ENIG_DEBUG("QueryAwait::fdChanged() " << socket);
+    socketIoHandler_->unregisterHandler();
+    socketIoHandler_->changeHandlerFD(socket);
+    socketIoHandler_->registerHandler(AsioEventHandler::READ_WRITE | AsioEventHandler::PERSIST);
+    writing_ = true;
+    socket_ = socket;
 }
 
 

@@ -250,6 +250,7 @@ protected:
                         std::string const & errorInfo);
     void attachSocketIoHandler();
     void detachSocketIoHandler();
+    void fdChanged();
 
 private:
     std::shared_ptr<SocketIoHandler> socketIoHandler_;

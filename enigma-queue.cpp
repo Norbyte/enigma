@@ -276,6 +276,7 @@ QueryAwait * Pool::enqueue(p_Query query) {
         throw Exception("Enigma queue size exceeded");
     }
 
+    Lock lock(mutex_);
     bool shouldExecute = queue_.empty() && !idleConnections_.empty();
     ENIG_DEBUG("Pool::enqueue(): create QueryAwait");
     auto event = new QueryAwait(std::move(query));
@@ -346,7 +347,10 @@ void Pool::executeNext() {
         ENIG_DEBUG("Begin executing query");
     }
 
-    auto callback = [this, connectionId] { this->queryCompleted(connectionId); };
+    auto callback = [this, connectionId] {
+        Lock lock(mutex_);
+        this->queryCompleted(connectionId);
+    };
     query->assign(connection);
     query->begin(callback);
 }
