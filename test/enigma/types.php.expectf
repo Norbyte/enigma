@@ -1,0 +1,21 @@
+array(1) {
+  [0]=>
+  array(8) {
+    ["a"]=>
+    int(1)
+    ["aa"]=>
+    int(9223372036854775807)
+    ["b"]=>
+    float(2.5)
+    ["bb"]=>
+    string(3) "2.5"
+    ["c"]=>
+    bool(false)
+    ["d"]=>
+    bool(true)
+    ["e"]=>
+    string(4) "aaaa"
+    ["f"]=>
+    NULL
+  }
+}
