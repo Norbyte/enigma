@@ -267,8 +267,10 @@ Variant ResultResource::textValue(int row, int column, Oid oid) const {
             return Variant(atol(value));
 
         case kOidFloat4:
+            return Variant(fast_atof<float>(value));
+
         case kOidFloat8:
-            return Variant(atof(value));
+            return Variant(fast_atof<double>(value));
 
         case kOidInt2Array:
         case kOidInt4Array:
