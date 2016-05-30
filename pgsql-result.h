@@ -54,6 +54,15 @@ public:
         SourceFunction = PG_DIAG_SOURCE_FUNCTION
     };
 
+    enum TypedValueOptions {
+        kNativeJson = 0x01,
+        // TODO: not supported yet!
+        kNativeArrays = 0x02,
+        kNativeDateTime = 0x04,
+        kAllNative = kNativeJson | kNativeArrays | kNativeDateTime,
+        kNumericAsFloat = 0x08
+    };
+
     ResultResource(PGresult *result);
 
     ~ResultResource();
@@ -122,7 +131,7 @@ public:
     /**
      * Returns a single field value of one row of the result. Row and column numbers start at 0.
      */
-    Variant typedValue(int row, int column, Oid type) const;
+    Variant typedValue(int row, int column, Oid type, unsigned flags) const;
 
     /**
      * Returns the number of parameters of a prepared statement.
@@ -143,13 +152,13 @@ private:
      * Returns a single binary-formatted field value of one row of the result.
      * Row and column numbers start at 0.
      */
-    Variant binaryValue(int row, int column, Oid type) const;
+    Variant binaryValue(int row, int column, Oid type, unsigned flags) const;
 
     /**
      * Returns a single text-formatted field value of one row of the result.
      * Row and column numbers start at 0.
      */
-    Variant textValue(int row, int column, Oid type) const;
+    Variant textValue(int row, int column, Oid type, unsigned flags) const;
 };
 
 }

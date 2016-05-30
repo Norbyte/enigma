@@ -12,10 +12,10 @@ function query($command, $args = [], $flags = 0)
     return $response;
 }
 
-function querya($command, $args = [], $flags = 0)
+function querya($command, $args = [], $flags = 0, $fetchFlags = 0)
 {
     $results = query($command, $args, $flags);
-    return $results->fetchArrays();
+    return $results->fetchArrays($fetchFlags);
 }
 
 function queryo($command, $args = [], $cls = null, $fetchFlags = 0, $queryFlags = 0)

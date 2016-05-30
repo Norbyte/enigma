@@ -1,0 +1,45 @@
+array(1) {
+  [0]=>
+  array(7) {
+    ["json1"]=>
+    object(stdClass)#%d (2) {
+      ["key"]=>
+      string(3) "val"
+      ["bool"]=>
+      bool(false)
+    }
+    ["json2"]=>
+    bool(false)
+    ["json3"]=>
+    NULL
+    ["num"]=>
+    float(12345678)
+    ["d"]=>
+    object(DateTime)#%d (3) {
+      ["date"]=>
+      string(26) "2015-01-01 00:00:00.000000"
+      ["timezone_type"]=>
+      int(%d)
+      ["timezone"]=>
+      string(13) "%s"
+    }
+    ["ts"]=>
+    object(DateTime)#%d (3) {
+      ["date"]=>
+      string(26) "2015-02-02 03:04:05.123123"
+      ["timezone_type"]=>
+      int(%d)
+      ["timezone"]=>
+      string(13) "%s"
+    }
+    ["tsz"]=>
+    object(DateTime)#%d (3) {
+      ["date"]=>
+      string(26) "2015-02-01 22:04:05.232323"
+      ["timezone_type"]=>
+      int(1)
+      ["timezone"]=>
+      string(6) "+01:00"
+    }
+  }
+}

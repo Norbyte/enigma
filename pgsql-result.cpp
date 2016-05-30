@@ -1,6 +1,8 @@
 #include "pgsql-result.h"
 #include "pgsql-connection.h"
 #include "hphp/runtime/base/array-iterator.h"
+#include "hphp/runtime/ext/json/ext_json.h"
+#include "hphp/runtime/ext/datetime/ext_datetime.h"
 
 namespace HPHP {
 namespace Pgsql {
@@ -38,6 +40,42 @@ enum TypeOid {
     kOidNumeric = 1700,
     kOidUuid = 2950
 };
+
+long fast_atol(const char *str, int len) {
+    long value = 0;
+    long sign = 1;
+    if (str[0] == '-') {
+        sign = -1;
+        ++str;
+        --len;
+    }
+
+    switch (len) {
+        case 19: value += (str[len-19] - '0') * 1000000000000000000l;
+        case 18: value += (str[len-18] - '0') * 100000000000000000l;
+        case 17: value += (str[len-17] - '0') * 10000000000000000l;
+        case 16: value += (str[len-16] - '0') * 1000000000000000l;
+        case 15: value += (str[len-15] - '0') * 100000000000000l;
+        case 14: value += (str[len-14] - '0') * 10000000000000l;
+        case 13: value += (str[len-13] - '0') * 1000000000000l;
+        case 12: value += (str[len-12] - '0') * 100000000000l;
+        case 11: value += (str[len-11] - '0') * 10000000000l;
+        case 10: value += (str[len-10] - '0') * 1000000000l;
+        case  9: value += (str[len- 9] - '0') * 100000000l;
+        case  8: value += (str[len- 8] - '0') * 10000000l;
+        case  7: value += (str[len- 7] - '0') * 1000000l;
+        case  6: value += (str[len- 6] - '0') * 100000l;
+        case  5: value += (str[len- 5] - '0') * 10000l;
+        case  4: value += (str[len- 4] - '0') * 1000l;
+        case  3: value += (str[len- 3] - '0') * 100l;
+        case  2: value += (str[len- 2] - '0') * 10l;
+        case  1: value += (str[len- 1] - '0');
+        default: break;
+    }
+
+    return value * sign;
+}
+
 
 ResultResource::ResultResource(PGresult *result)
         : result_{result} { }
@@ -168,13 +206,13 @@ String ResultResource::value(int row, int column) const {
 /**
  * Returns a single field value of one row of the result. Row and column numbers start at 0.
  */
-Variant ResultResource::typedValue(int row, int column, Oid oid) const {
+Variant ResultResource::typedValue(int row, int column, Oid oid, uint32_t flags) const {
     if (PQgetisnull(result_, row, column) == 1) {
         return Variant(Variant::NullInit{});
     } else if (columnBinary(column)) {
-        return binaryValue(row, column, oid);
+        return binaryValue(row, column, oid, flags);
     } else {
-        return textValue(row, column, oid);
+        return textValue(row, column, oid, flags);
     }
 }
 
@@ -182,7 +220,7 @@ Variant ResultResource::typedValue(int row, int column, Oid oid) const {
  * Returns a single binary-formatted field value of one row of the result.
  * Row and column numbers start at 0.
  */
-Variant ResultResource::binaryValue(int row, int column, Oid oid) const {
+Variant ResultResource::binaryValue(int row, int column, Oid oid, uint32_t flags) const {
     auto value = PQgetvalue(result_, row, column);
     auto length = PQgetlength(result_, row, column);
 
@@ -223,12 +261,20 @@ Variant ResultResource::binaryValue(int row, int column, Oid oid) const {
         case kOidBytea:
         case kOidChar:
         case kOidText:
-        case kOidJson:
         case kOidXml:
         case kOidUnknown:
         case kOidBpchar:
         case kOidVarchar:
             return String(value, (size_t) length, CopyStringMode{});
+
+        case kOidJson:
+            if (flags & kNativeJson)
+            {
+                String json(value, (size_t) length, CopyStringMode{});
+                return f_json_decode(json);
+            }
+            else
+                return String(value, (size_t) length, CopyStringMode{});
 
         case kOidInt2Array:
         case kOidInt4Array:
@@ -250,7 +296,7 @@ Variant ResultResource::binaryValue(int row, int column, Oid oid) const {
  * Returns a single text-formatted field value of one row of the result.
  * Row and column numbers start at 0.
  */
-Variant ResultResource::textValue(int row, int column, Oid oid) const {
+Variant ResultResource::textValue(int row, int column, Oid oid, uint32_t flags) const {
     auto value = PQgetvalue(result_, row, column);
     auto length = PQgetlength(result_, row, column);
 
@@ -264,7 +310,7 @@ Variant ResultResource::textValue(int row, int column, Oid oid) const {
         case kOidOid:
         case kOidXid:
         case kOidCid:
-            return Variant(atol(value));
+            return Variant(fast_atol(value, length));
 
         case kOidFloat4:
             return Variant(fast_atof<float>(value));
@@ -272,18 +318,38 @@ Variant ResultResource::textValue(int row, int column, Oid oid) const {
         case kOidFloat8:
             return Variant(fast_atof<double>(value));
 
+        case kOidNumeric:
+            if (flags & kNumericAsFloat)
+                return Variant(fast_atof<double>(value));
+            else
+                return String(value, (size_t) length, CopyStringMode{});
+
+        case kOidJson:
+            if (flags & kNativeJson)
+            {
+                String json(value, (size_t) length, CopyStringMode{});
+                return f_json_decode(json);
+            }
+            else
+                return String(value, (size_t) length, CopyStringMode{});
+
+        case kOidDate:
+        case kOidTimestamp:
+        case kOidTimestamptz:
+            if (flags & kNativeDateTime)
+            {
+                String dt(value, (size_t) length, CopyStringMode{});
+                return f_date_create(dt);
+            }
+            else
+                return String(value, (size_t) length, CopyStringMode{});
+
         case kOidInt2Array:
         case kOidInt4Array:
         case kOidFloat4Array:
         case kOidFloat8Array:
-        case kOidDate:
         case kOidTime:
-        case kOidTimestamp:
-        case kOidTimestamptz:
         case kOidInterval:
-        case kOidNumeric: // TODO !!!
-        case kOidJson:
-
         default:
             return String(value, (size_t) length, CopyStringMode{});
     }

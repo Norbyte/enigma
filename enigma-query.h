@@ -111,10 +111,13 @@ public:
     static Object newInstance(std::unique_ptr<Pgsql::ResultResource> results);
 
     enum FetchOptions {
-        kBindToProperties = 0x01,
-        kIgnoreUndeclared = 0x02,
-        kAllowUndeclared = 0x04,
-        kDontCallCtor = 0x08
+        // Lower 8 bits reserved for ResultResource flags
+        kResultResourceMask = 0xff,
+        kBindToProperties = 0x0100,
+        kIgnoreUndeclared = 0x0200,
+        kAllowUndeclared = 0x0400,
+        kDontCallCtor = 0x0800,
+        kNumbered = 0x1000
     };
 
     QueryResult();

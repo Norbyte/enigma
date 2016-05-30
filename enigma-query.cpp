@@ -254,7 +254,7 @@ void QueryResult::postConstruct(std::unique_ptr<Pgsql::ResultResource> results) 
 }
 
 
-Array HHVM_METHOD(QueryResult, fetchArrays) {
+Array HHVM_METHOD(QueryResult, fetchArrays, int64_t flags) {
     auto data = Native::data<QueryResult>(this_);
     Pgsql::ResultResource const & resource = data->resource();
 
@@ -269,10 +269,23 @@ Array HHVM_METHOD(QueryResult, fetchArrays) {
         colTypes[col] = resource.columnType(col);
     }
 
+    uint32_t valueFlags = (uint32_t)(flags & QueryResult::kResultResourceMask);
+    bool numbered = (bool)(flags & QueryResult::kNumbered);
     for (auto row = 0; row < rows; row++) {
         Array rowArr;
-        for (auto col = 0; col < cols; col++) {
-            rowArr.set(colNames[col], resource.typedValue(row, col, colTypes[col]));
+        if (numbered)
+        {
+            // Fetch arrays with 0, 1, ..., n as keys
+            for (auto col = 0; col < cols; col++) {
+                rowArr.set(col, resource.typedValue(row, col, colTypes[col], valueFlags));
+            }
+        }
+        else
+        {
+            // Fetch arrays with column names as keys
+            for (auto col = 0; col < cols; col++) {
+                rowArr.set(colNames[col], resource.typedValue(row, col, colTypes[col], valueFlags));
+            }
         }
 
         results.append(rowArr);
@@ -300,6 +313,7 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags) 
         colTypes[col] = resource.columnType(col);
     }
 
+    uint32_t valueFlags = (uint32_t)(flags & QueryResult::kResultResourceMask);
     bool callCtor = !(flags & QueryResult::kDontCallCtor);
     /*
      * When binding to properties, we'll set class properties directly in
@@ -342,7 +356,7 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags) 
             auto props = rowObj->propVec();
             for (auto col = 0; col < cols; col++) {
                 auto slot = propSlots[col];
-                auto value = resource.typedValue(row, col, colTypes[col]);
+                auto value = resource.typedValue(row, col, colTypes[col], valueFlags);
                 if (UNLIKELY(slot == kInvalidSlot)) {
                     if (useSetter) {
                         rowObj->o_set(propNames[col], value);
@@ -362,6 +376,7 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags) 
         }
 
         for (auto row = 0; row < rows; row++) {
+            // Construct a new row object and call the setter on each property
             Object rowObj{rowClass};
             if (callCtor) {
                 TypedValue ret;
@@ -369,7 +384,7 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags) 
             }
 
             for (auto col = 0; col < cols; col++) {
-                rowObj->o_set(colNames[col], resource.typedValue(row, col, colTypes[col]));
+                rowObj->o_set(colNames[col], resource.typedValue(row, col, colTypes[col], valueFlags));
             }
 
             results.append(rowObj);
@@ -615,10 +630,17 @@ void registerClasses() {
     ENIGMA_ME(QueryResult, fetchArrays);
     ENIGMA_ME(QueryResult, fetchObjects);
     Native::registerNativeDataInfo<QueryResult>(s_QueryResult.get());
+    HHVM_RCC_INT(QueryResultNS, NATIVE_JSON, Pgsql::ResultResource::kNativeJson);
+    HHVM_RCC_INT(QueryResultNS, NATIVE_ARRAYS, Pgsql::ResultResource::kNativeArrays);
+    HHVM_RCC_INT(QueryResultNS, NATIVE_DATETIME, Pgsql::ResultResource::kNativeDateTime);
+    HHVM_RCC_INT(QueryResultNS, NATIVE, Pgsql::ResultResource::kAllNative);
+    HHVM_RCC_INT(QueryResultNS, NUMERIC_FLOAT, Pgsql::ResultResource::kNumericAsFloat);
+
     HHVM_RCC_INT(QueryResultNS, BIND_TO_PROPERTIES, QueryResult::kBindToProperties);
     HHVM_RCC_INT(QueryResultNS, IGNORE_UNDECLARED, QueryResult::kIgnoreUndeclared);
     HHVM_RCC_INT(QueryResultNS, ALLOW_UNDECLARED, QueryResult::kAllowUndeclared);
     HHVM_RCC_INT(QueryResultNS, DONT_CALL_CTOR, QueryResult::kDontCallCtor);
+    HHVM_RCC_INT(QueryResultNS, NUMBERED, QueryResult::kNumbered);
 }
 
 }
