@@ -346,6 +346,68 @@ PG_TEXT_PARSER(Timestamptz)
 #undef PG_BINARY_PARSER
 #undef PG_TEXT_PARSER
 
+inline Variant parseBinaryValueOid(const char * value, int length, Oid oid, uint32_t flags);
+
+inline Variant parseBinaryArray(const char * value, int length, uint32_t flags)
+{
+    if (length < 12) {
+        throw EnigmaException("Not enough bytes for headers");
+    }
+
+    int32_t dimensions = parseInt32(value + 0);
+    /*int32_t hasNull =*/ parseInt32(value + 4);
+    int32_t elementOid = parseInt32(value + 8);
+    value += 12;
+    length -= 12;
+
+    if (dimensions == 0) {
+        return Array::Create();
+    } else if (dimensions > 1) {
+        throw EnigmaException("Only 1-dimensional arrays are supported");
+    }
+
+    if (length < 8) {
+        throw EnigmaException("Not enough bytes for dimension information");
+    }
+
+    int32_t count = parseInt32(value + 0);
+    int32_t leftBound = parseInt32(value + 4);
+    // pgsql array numbering starts from 1
+    leftBound--;
+    value += 8;
+    length -= 8;
+
+    Array arr{Array::Create()};
+    for (int i = 0; i < count; i++) {
+        if (length < 4) {
+            throw EnigmaException("Not enough bytes for element length");
+        }
+
+        int32_t elementLength = parseInt32(value);
+        value += 4;
+        length -= 4;
+        if (elementLength == -1) {
+            // Null value
+            arr.set(i + leftBound, init_null());
+        } else if (elementLength < 0) {
+            throw EnigmaException("Invalid element length");
+        } else if (length < elementLength) {
+            throw EnigmaException("Not enough bytes for element data");
+        } else {
+            arr.set(i + leftBound, parseBinaryValueOid(value, elementLength, elementOid, flags));
+            value += elementLength;
+            length -= elementLength;
+        }
+    }
+
+    if (length) {
+        throw EnigmaException("Stray data at end of array");
+    }
+
+    return arr;
+}
+
+#define HANDLE_ARRAY(ty) case kOid##ty##Array: return parseBinaryArray(value, length, flags);
 #define HANDLE_TYPE(ty) case kOid##ty: return parseValue<kOid##ty, true>(value, length, flags);
 inline Variant parseBinaryValueOid(const char * value, int length, Oid oid, uint32_t flags)
 {
@@ -371,12 +433,31 @@ inline Variant parseBinaryValueOid(const char * value, int length, Oid oid, uint
         HANDLE_TYPE(Varchar)
         HANDLE_TYPE(Json)
 
+        HANDLE_ARRAY(Bool)
+        HANDLE_ARRAY(Int2)
+        HANDLE_ARRAY(Int4)
+        HANDLE_ARRAY(Int8)
+        HANDLE_ARRAY(Float4)
+        HANDLE_ARRAY(Float8)
+        HANDLE_ARRAY(Numeric)
+        HANDLE_ARRAY(Json)
+        HANDLE_ARRAY(Date)
+        HANDLE_ARRAY(Timestamp)
+        HANDLE_ARRAY(Timestamptz)
+
+        HANDLE_ARRAY(Xml)
+        HANDLE_ARRAY(Char)
+        HANDLE_ARRAY(Text)
+        HANDLE_ARRAY(Bpchar)
+        HANDLE_ARRAY(Varchar)
+
         default:
             throw EnigmaException(std::string("Cannot receive type using binary protocol: OID ")
                                   + std::to_string(oid));
     }
 }
 #undef HANDLE_TYPE
+#undef HANDLE_ARRAY
 
 inline Variant parseTextValueOid(const char * value, int length, Oid oid, uint32_t flags);
 

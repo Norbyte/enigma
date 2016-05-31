@@ -1,0 +1,106 @@
+array(1) {
+  [0]=>
+  array(14) {
+    ["n"]=>
+    NULL
+    ["i1"]=>
+    array(0) {
+    }
+    ["i2"]=>
+    array(3) {
+      [0]=>
+      int(1)
+      [1]=>
+      int(2)
+      [2]=>
+      int(3)
+    }
+    ["i3"]=>
+    array(2) {
+      [0]=>
+      int(-1234)
+      [1]=>
+      int(-123131132)
+    }
+    ["i_n"]=>
+    array(3) {
+      [0]=>
+      int(11)
+      [1]=>
+      NULL
+      [2]=>
+      int(22)
+    }
+    ["f"]=>
+    array(2) {
+      [0]=>
+      float(12.34)
+      [1]=>
+      float(-111222.333)
+    }
+    ["b"]=>
+    array(2) {
+      [0]=>
+      bool(true)
+      [1]=>
+      bool(false)
+    }
+    ["t1"]=>
+    array(0) {
+    }
+    ["t2"]=>
+    array(1) {
+      [0]=>
+      string(3) "asd"
+    }
+    ["t3"]=>
+    array(2) {
+      [0]=>
+      string(3) "asd"
+      [1]=>
+      string(3) "bsd"
+    }
+    ["t4"]=>
+    array(3) {
+      [0]=>
+      string(3) "asd"
+      [1]=>
+      string(0) ""
+      [2]=>
+      string(3) "bsd"
+    }
+    ["t5"]=>
+    array(3) {
+      [0]=>
+      string(3) "asd"
+      [1]=>
+      string(3) "bsd"
+      [2]=>
+      string(0) ""
+    }
+    ["t6"]=>
+    array(6) {
+      [0]=>
+      string(0) ""
+      [1]=>
+      NULL
+      [2]=>
+      string(4) "NULL"
+      [3]=>
+      string(0) ""
+      [4]=>
+      string(1) "a"
+      [5]=>
+      NULL
+    }
+    ["t7"]=>
+    array(3) {
+      [0]=>
+      string(4) ""{}'"
+      [1]=>
+      string(1) "\"
+      [2]=>
+      string(3) "123"
+    }
+  }
+}
