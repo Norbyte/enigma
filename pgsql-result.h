@@ -2,7 +2,7 @@
 #define HPHP_PGSQL_RESOURCE_H
 
 #include "hphp/runtime/ext/extension.h"
-#include <postgresql/libpq-fe.h>
+#include <libpq-fe.h>
 #include "enigma-common.h"
 
 namespace HPHP {
