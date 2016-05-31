@@ -3,6 +3,7 @@
 
 #include "hphp/runtime/ext/json/ext_json.h"
 #include "hphp/runtime/ext/datetime/ext_datetime.h"
+#include "hphp/runtime/vm/native-data.h"
 
 namespace HPHP {
 namespace Pgsql {
@@ -90,6 +91,38 @@ enum TypeOid {
     kOidUuid = 2950
 };
 
+inline int16_t parseInt16(const char * value)
+{
+    uint16_t i = __builtin_bswap16(*reinterpret_cast<uint16_t const *>(value));
+    return *reinterpret_cast<int16_t *>(&i);
+}
+
+inline int32_t parseInt32(const char * value)
+{
+    uint32_t i = __builtin_bswap32(*reinterpret_cast<uint32_t const *>(value));
+    return *reinterpret_cast<int32_t *>(&i);
+}
+
+inline int64_t parseInt64(const char * value)
+{
+    uint64_t i = ((uint64_t)__builtin_bswap32(*reinterpret_cast<uint32_t const *>(value)) << 32) |
+                 __builtin_bswap32(*reinterpret_cast<uint32_t const *>(value + 4));
+    return *reinterpret_cast<int64_t *>(&i);
+}
+
+inline float parseFloat32(const char * value)
+{
+    uint32_t i = __builtin_bswap32(*reinterpret_cast<uint32_t const *>(value));
+    return *reinterpret_cast<float *>(&i);
+}
+
+inline double parseFloat64(const char * value)
+{
+    uint64_t i = ((uint64_t)__builtin_bswap32(*reinterpret_cast<uint32_t const *>(value)) << 32) |
+                 __builtin_bswap32(*reinterpret_cast<uint32_t const *>(value + 4));
+    return *reinterpret_cast<double *>(&i);
+}
+
 template<Oid Ty, bool Binary>
 Variant parseValue(const char * value, int length, uint32_t flags) = delete;
 
@@ -116,52 +149,83 @@ PG_BINARY_PARSER(Bool)
 
 PG_BINARY_PARSER(Int2)
 {
-    uint16_t i = __builtin_bswap16(*reinterpret_cast<uint16_t const *>(value));
-    return Variant(*reinterpret_cast<int16_t *>(&i));
+    return Variant(parseInt16(value));
 }
 
 PG_BINARY_PARSER(Int4)
 {
-    uint32_t i = __builtin_bswap32(*reinterpret_cast<uint32_t const *>(value));
-    return Variant(*reinterpret_cast<int32_t *>(&i));
+    return Variant(parseInt32(value));
 }
 
 PG_BINARY_PARSER(Oid)
 {
-    uint32_t i = __builtin_bswap32(*reinterpret_cast<uint32_t const *>(value));
-    return Variant(*reinterpret_cast<int32_t *>(&i));
+    return Variant(parseInt32(value));
 }
 
 PG_BINARY_PARSER(Xid)
 {
-    uint32_t i = __builtin_bswap32(*reinterpret_cast<uint32_t const *>(value));
-    return Variant(*reinterpret_cast<int32_t *>(&i));
+    return Variant(parseInt32(value));
 }
 
 PG_BINARY_PARSER(Cid)
 {
-    uint32_t i = __builtin_bswap32(*reinterpret_cast<uint32_t const *>(value));
-    return Variant(*reinterpret_cast<int32_t *>(&i));
+    return Variant(parseInt32(value));
 }
 
 PG_BINARY_PARSER(Int8)
 {
-    uint64_t i = ((uint64_t)__builtin_bswap32(*reinterpret_cast<uint32_t const *>(value)) << 32) |
-                 __builtin_bswap32(*reinterpret_cast<uint32_t const *>(value + 4));
-    return Variant(*reinterpret_cast<int64_t *>(&i));
+    return Variant(parseInt64(value));
 }
 
 PG_BINARY_PARSER(Float4)
 {
-    uint32_t i = __builtin_bswap32(*reinterpret_cast<uint32_t const *>(value));
-    return Variant(*reinterpret_cast<float *>(&i));
+    return Variant(parseFloat32(value));
 }
 
 PG_BINARY_PARSER(Float8)
 {
-    uint64_t i = ((uint64_t)__builtin_bswap32(*reinterpret_cast<uint32_t const *>(value)) << 32) |
-                 __builtin_bswap32(*reinterpret_cast<uint32_t const *>(value + 4));
-    return Variant(*reinterpret_cast<double *>(&i));
+    return Variant(parseFloat64(value));
+}
+
+const StaticString
+    s_DateTimeFormat("U.u"),
+    s_DateFormat("Y-m-d H:i:s");
+
+inline Variant parseBinaryTimestamp(const char * value, uint32_t flags)
+{
+    int64_t time = parseInt64(value);
+    // Number of microseconds between 1970-01-01 and 2000-01-01
+    time += 946684800000000l;
+
+    // Convert to "epoch.microseconds" format
+    char ts[32];
+    sprintf(ts, "%ld.%ld", time / 1000000, time % 1000000);
+    String tss(ts, CopyStringMode{});
+    auto cls = DateTimeData::getClass();
+    Variant dt = HHVM_STATIC_MN(DateTime, createFromFormat)(
+            cls, s_DateTimeFormat, tss, init_null_variant);
+    if (!dt.isObject()) {
+        return init_null_variant;
+    }
+
+    Object datetime(dt.toObject());
+    if (flags & ResultResource::kNativeDateTime) {
+        return datetime;
+    } else {
+        return HHVM_MN(DateTime, format)(datetime.get(), s_DateFormat);
+    }
+}
+
+PG_BINARY_PARSER(Timestamp)
+{
+    return parseBinaryTimestamp(value, flags);
+}
+
+PG_BINARY_PARSER(Timestamptz)
+{
+    // TODO: timezone information is lost when receiving TIMESTAMPTZ
+    // using the binary protocol
+    return parseBinaryTimestamp(value, flags);
 }
 
 PG_BINARY_PARSER(Bytea) PG_PARSE_STRING
@@ -256,7 +320,7 @@ PG_TEXT_PARSER(Date)
 {
     if (flags & ResultResource::kNativeDateTime) {
         String dt(value, (size_t) length, CopyStringMode{});
-        return f_date_create(dt);
+        return HHVM_FN(date_create)(dt);
     } else
         PG_PARSE_STRING
 }
@@ -265,7 +329,7 @@ PG_TEXT_PARSER(Timestamp)
 {
     if (flags & ResultResource::kNativeDateTime) {
         String dt(value, (size_t) length, CopyStringMode{});
-        return f_date_create(dt);
+        return HHVM_FN(date_create)(dt);
     } else
         PG_PARSE_STRING
 }
@@ -295,6 +359,9 @@ inline Variant parseBinaryValueOid(const char * value, int length, Oid oid, uint
         HANDLE_TYPE(Int8)
         HANDLE_TYPE(Float4)
         HANDLE_TYPE(Float8)
+        HANDLE_TYPE(Timestamp)
+        HANDLE_TYPE(Timestamptz)
+
         HANDLE_TYPE(Bytea)
         HANDLE_TYPE(Char)
         HANDLE_TYPE(Text)
