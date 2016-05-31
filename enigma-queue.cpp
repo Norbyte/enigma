@@ -232,10 +232,31 @@ std::string PlanCache::generatePlanName() {
     return PlanNamePrefix + std::to_string(nextPlanId_++);
 }
 
+const StaticString
+    s_PoolSize("pool_size"),
+    s_QueueSize("queue_size");
 
-Pool::Pool(Array const & options) {
+Pool::Pool(Array const & connectionOpts, Array const & poolOpts) {
+    if (poolOpts.exists(s_PoolSize)) {
+        auto size = (unsigned)poolOpts[s_PoolSize].toInt32();
+        if (size < 1 || size > MaxPoolSize) {
+            throwEnigmaException("Invalid pool size specified");
+        }
+
+        poolSize_ = size;
+    }
+
+    if (poolOpts.exists(s_QueueSize)) {
+        auto size = (unsigned)poolOpts[s_QueueSize].toInt32();
+        if (size < 1 || size > MaxQueueSize) {
+            throwEnigmaException("Invalid queue size specified");
+        }
+
+        maxQueueSize_ = size;
+    }
+
     for (unsigned i = 0; i < poolSize_; i++) {
-        addConnection(options);
+        addConnection(connectionOpts);
     }
 }
 

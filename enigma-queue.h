@@ -65,7 +65,7 @@ public:
     CachedPlan const * assignPlan(std::string const & query);
 
 private:
-    static constexpr char * PlanNamePrefix = "EnigmaPlan_";
+    static constexpr char const * PlanNamePrefix = "EnigmaPlan_";
     const unsigned DefaultPlanCacheSize = 30;
 
     unsigned planCacheSize_{ DefaultPlanCacheSize };
@@ -82,9 +82,11 @@ typedef std::unique_ptr<PlanCache> p_PlanCache;
 class Pool {
 public:
     const unsigned DefaultQueueSize = 50;
+    const unsigned MaxQueueSize = 1000;
     const unsigned DefaultPoolSize = 1;
+    const unsigned MaxPoolSize = 100;
 
-    Pool(Array const & options);
+    Pool(Array const & connectionOpts, Array const & poolOpts);
     ~Pool();
 
     Pool(Pool const &) = delete;
