@@ -216,6 +216,56 @@ inline Variant parseBinaryTimestamp(const char * value, uint32_t flags)
     }
 }
 
+
+void
+j2date(int jd, int *year, int *month, int *day)
+{
+    unsigned int julian;
+    unsigned int quad;
+    unsigned int extra;
+    int         y;
+
+    julian = jd;
+    julian += 32044;
+    quad = julian / 146097;
+    extra = (julian - quad * 146097) * 4 + 3;
+    julian += 60 + quad * 3 + extra / 146097;
+    quad = julian / 1461;
+    julian -= quad * 1461;
+    y = julian * 4 / 1461;
+    julian = ((y != 0) ? ((julian + 305) % 365) : ((julian + 306) % 366))
+        + 123;
+    y += quad * 4;
+    *year = y - 4800;
+    quad = julian * 2141 / 65536;
+    *day = julian - 7834 * quad / 256;
+    *month = (quad + 10) % 12 + 1;
+
+    return;
+}   /* j2date() */
+
+const unsigned POSTGRES_EPOCH_JDATE = 2451545;
+
+PG_BINARY_PARSER(Date)
+{
+    int32_t date = parseInt32(value);
+    int year, month, day;
+    j2date(date + POSTGRES_EPOCH_JDATE, &year, &month, &day);
+
+    // Convert to "epoch.microseconds" format
+    char ts[64];
+    sprintf(ts, "%d-%02d-%02d", year, month, day);
+    String tss(ts, CopyStringMode{});
+
+    if (flags & ResultResource::kNativeDateTime) {
+        auto cls = DateTimeData::getClass();
+        return HHVM_STATIC_MN(DateTime, createFromFormat)(
+                cls, s_DateTimeFormat, tss, init_null_variant);
+    } else {
+        return tss;
+    }
+}
+
 PG_BINARY_PARSER(Timestamp)
 {
     return parseBinaryTimestamp(value, flags);
@@ -421,6 +471,7 @@ inline Variant parseBinaryValueOid(const char * value, int length, Oid oid, uint
         HANDLE_TYPE(Int8)
         HANDLE_TYPE(Float4)
         HANDLE_TYPE(Float8)
+        HANDLE_TYPE(Date)
         HANDLE_TYPE(Timestamp)
         HANDLE_TYPE(Timestamptz)
 

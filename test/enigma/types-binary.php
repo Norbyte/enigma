@@ -15,6 +15,7 @@ $rows = querya("select
     'asdasd'::varchar as vc,
     '{}'::json as j,
     '<a />'::xml as x,
+    '2009-04-05' as d,
     '2015-02-02 03:04:05+05:00'::timestamp as ts,
     '2015-02-02 03:04:05+05:00'::timestamptz as ts2,
     null as n",
