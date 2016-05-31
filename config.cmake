@@ -11,6 +11,8 @@ ENDIF()
 
 include_directories(${PGSQL_INCLUDE_DIR})
 
+# add_definitions(-DENIGMA_DEBUG)
+
 HHVM_EXTENSION(enigma ext_enigma.cpp pgsql-connection.cpp pgsql-result.cpp enigma-query.cpp enigma-queue.cpp)
 HHVM_SYSTEMLIB(enigma ext_enigma.php)
 
