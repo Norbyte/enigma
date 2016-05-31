@@ -56,7 +56,6 @@ public:
 
     enum TypedValueOptions {
         kNativeJson = 0x01,
-        // TODO: not supported yet!
         kNativeArrays = 0x02,
         kNativeDateTime = 0x04,
         kAllNative = kNativeJson | kNativeArrays | kNativeDateTime,
@@ -147,18 +146,6 @@ public:
 
 private:
     PGresult * result_;
-
-    /**
-     * Returns a single binary-formatted field value of one row of the result.
-     * Row and column numbers start at 0.
-     */
-    Variant binaryValue(int row, int column, Oid type, unsigned flags) const;
-
-    /**
-     * Returns a single text-formatted field value of one row of the result.
-     * Row and column numbers start at 0.
-     */
-    Variant textValue(int row, int column, Oid type, unsigned flags) const;
 };
 
 }

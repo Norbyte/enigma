@@ -1,80 +1,10 @@
 #include "pgsql-result.h"
 #include "pgsql-connection.h"
 #include "hphp/runtime/base/array-iterator.h"
-#include "hphp/runtime/ext/json/ext_json.h"
-#include "hphp/runtime/ext/datetime/ext_datetime.h"
+#include "pgsql-parse.h"
 
 namespace HPHP {
 namespace Pgsql {
-
-/*
- * PostgreSQL OID values from server/catalog/pg_type.h
- */
-enum TypeOid {
-    kOidBool = 16,
-    kOidBytea = 17,
-    kOidChar = 18,
-    kOidInt8 = 20,
-    kOidInt2 = 21,
-    kOidInt4 = 23,
-    kOidText = 25,
-    kOidOid = 26,
-    kOidXid = 28,
-    kOidCid = 29,
-    kOidJson = 114,
-    kOidXml = 142,
-    kOidFloat4 = 700,
-    kOidFloat8 = 701,
-    kOidUnknown = 705,
-    kOidInt2Array = 1005,
-    kOidInt4Array = 1007,
-    kOidFloat4Array = 1021,
-    kOidFloat8Array = 1022,
-    kOidBpchar = 1042,
-    kOidVarchar = 1043,
-    kOidDate = 1082,
-    kOidTime = 1083,
-    kOidTimestamp = 1114,
-    kOidTimestamptz = 1184,
-    kOidInterval = 1186,
-    kOidNumeric = 1700,
-    kOidUuid = 2950
-};
-
-long fast_atol(const char *str, int len) {
-    long value = 0;
-    long sign = 1;
-    if (str[0] == '-') {
-        sign = -1;
-        ++str;
-        --len;
-    }
-
-    switch (len) {
-        case 19: value += (str[len-19] - '0') * 1000000000000000000l;
-        case 18: value += (str[len-18] - '0') * 100000000000000000l;
-        case 17: value += (str[len-17] - '0') * 10000000000000000l;
-        case 16: value += (str[len-16] - '0') * 1000000000000000l;
-        case 15: value += (str[len-15] - '0') * 100000000000000l;
-        case 14: value += (str[len-14] - '0') * 10000000000000l;
-        case 13: value += (str[len-13] - '0') * 1000000000000l;
-        case 12: value += (str[len-12] - '0') * 100000000000l;
-        case 11: value += (str[len-11] - '0') * 10000000000l;
-        case 10: value += (str[len-10] - '0') * 1000000000l;
-        case  9: value += (str[len- 9] - '0') * 100000000l;
-        case  8: value += (str[len- 8] - '0') * 10000000l;
-        case  7: value += (str[len- 7] - '0') * 1000000l;
-        case  6: value += (str[len- 6] - '0') * 100000l;
-        case  5: value += (str[len- 5] - '0') * 10000l;
-        case  4: value += (str[len- 4] - '0') * 1000l;
-        case  3: value += (str[len- 3] - '0') * 100l;
-        case  2: value += (str[len- 2] - '0') * 10l;
-        case  1: value += (str[len- 1] - '0');
-        default: break;
-    }
-
-    return value * sign;
-}
 
 
 ResultResource::ResultResource(PGresult *result)
@@ -209,149 +139,15 @@ String ResultResource::value(int row, int column) const {
 Variant ResultResource::typedValue(int row, int column, Oid oid, uint32_t flags) const {
     if (PQgetisnull(result_, row, column) == 1) {
         return Variant(Variant::NullInit{});
-    } else if (columnBinary(column)) {
-        return binaryValue(row, column, oid, flags);
     } else {
-        return textValue(row, column, oid, flags);
-    }
-}
+        auto value = PQgetvalue(result_, row, column);
+        auto length = PQgetlength(result_, row, column);
 
-/**
- * Returns a single binary-formatted field value of one row of the result.
- * Row and column numbers start at 0.
- */
-Variant ResultResource::binaryValue(int row, int column, Oid oid, uint32_t flags) const {
-    auto value = PQgetvalue(result_, row, column);
-    auto length = PQgetlength(result_, row, column);
-
-    switch (oid) {
-        case kOidBool:
-            return Variant(value[0] == 1);
-
-        case kOidInt2: {
-            uint16_t i = __builtin_bswap16(*reinterpret_cast<uint16_t *>(value));
-            return Variant(*reinterpret_cast<int16_t *>(&i));
+        if (columnBinary(column)) {
+            return parseBinaryValueOid(value, length, oid, flags);
+        } else {
+            return parseTextValueOid(value, length, oid, flags);
         }
-
-        case kOidInt4:
-        case kOidOid:
-        case kOidXid:
-        case kOidCid: {
-            uint32_t i = __builtin_bswap32(*reinterpret_cast<uint32_t *>(value));
-            return Variant(*reinterpret_cast<int32_t *>(&i));
-        }
-
-        case kOidInt8: {
-            uint64_t i = ((uint64_t)__builtin_bswap32(*reinterpret_cast<uint32_t *>(value)) << 32) |
-                         __builtin_bswap32(*reinterpret_cast<uint32_t *>(value + 4));
-            return Variant(*reinterpret_cast<int64_t *>(&i));
-        }
-
-        case kOidFloat4: {
-            uint32_t i = __builtin_bswap32(*reinterpret_cast<uint32_t *>(value));
-            return Variant(*reinterpret_cast<float *>(&i));
-        }
-
-        case kOidFloat8: {
-            uint64_t i = ((uint64_t)__builtin_bswap32(*reinterpret_cast<uint32_t *>(value)) << 32) |
-                         __builtin_bswap32(*reinterpret_cast<uint32_t *>(value + 4));
-            return Variant(*reinterpret_cast<double *>(&i));
-        }
-
-        case kOidBytea:
-        case kOidChar:
-        case kOidText:
-        case kOidXml:
-        case kOidUnknown:
-        case kOidBpchar:
-        case kOidVarchar:
-            return String(value, (size_t) length, CopyStringMode{});
-
-        case kOidJson:
-            if (flags & kNativeJson)
-            {
-                String json(value, (size_t) length, CopyStringMode{});
-                return f_json_decode(json);
-            }
-            else
-                return String(value, (size_t) length, CopyStringMode{});
-
-        case kOidInt2Array:
-        case kOidInt4Array:
-        case kOidFloat4Array:
-        case kOidFloat8Array:
-        case kOidDate:
-        case kOidTime:
-        case kOidTimestamp:
-        case kOidTimestamptz:
-        case kOidInterval:
-        case kOidNumeric: // TODO !!!
-        default:
-            throw EnigmaException(std::string("Cannot receive type using binary protocol: OID ")
-                + std::to_string(oid));
-    }
-}
-
-/**
- * Returns a single text-formatted field value of one row of the result.
- * Row and column numbers start at 0.
- */
-Variant ResultResource::textValue(int row, int column, Oid oid, uint32_t flags) const {
-    auto value = PQgetvalue(result_, row, column);
-    auto length = PQgetlength(result_, row, column);
-
-    switch (oid) {
-        case kOidBool:
-            return Variant(value[0] == 't');
-
-        case kOidInt2:
-        case kOidInt4:
-        case kOidInt8:
-        case kOidOid:
-        case kOidXid:
-        case kOidCid:
-            return Variant(fast_atol(value, length));
-
-        case kOidFloat4:
-            return Variant(fast_atof<float>(value));
-
-        case kOidFloat8:
-            return Variant(fast_atof<double>(value));
-
-        case kOidNumeric:
-            if (flags & kNumericAsFloat)
-                return Variant(fast_atof<double>(value));
-            else
-                return String(value, (size_t) length, CopyStringMode{});
-
-        case kOidJson:
-            if (flags & kNativeJson)
-            {
-                String json(value, (size_t) length, CopyStringMode{});
-                return f_json_decode(json);
-            }
-            else
-                return String(value, (size_t) length, CopyStringMode{});
-
-        case kOidDate:
-        case kOidTimestamp:
-        case kOidTimestamptz:
-            if (flags & kNativeDateTime)
-            {
-                String dt(value, (size_t) length, CopyStringMode{});
-                return f_date_create(dt);
-            }
-            else
-                return String(value, (size_t) length, CopyStringMode{});
-
-        case kOidInt2Array:
-        case kOidInt4Array:
-        case kOidFloat4Array:
-        case kOidFloat8Array:
-        case kOidTime:
-        case kOidInterval:
-        default:
-            return String(value, (size_t) length, CopyStringMode{});
     }
 }
 

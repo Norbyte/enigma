@@ -39,10 +39,10 @@ class QueryResult {
     public function test() : void;
 
     <<__Native>>
-    public function fetchArrays(int $flags) : array;
+    public function fetchArrays(int $flags = 0) : array;
 
     <<__Native>>
-    public function fetchObjects(string $cls, int $flags) : array;
+    public function fetchObjects(string $cls, int $flags = 0) : array;
 }
 
 }
