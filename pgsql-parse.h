@@ -341,12 +341,18 @@ PG_TEXT_PARSER(Int8)
 
 PG_TEXT_PARSER(Float4)
 {
-    return Variant(fast_atof<float>(value));
+    if (flags & ResultResource::kFastFloat)
+        return Variant(fast_atof<float>(value));
+    else
+        return Variant(atof(value));
 }
 
 PG_TEXT_PARSER(Float8)
 {
-    return Variant(fast_atof<double>(value));
+    if (flags & ResultResource::kFastFloat)
+        return Variant(fast_atof<double>(value));
+    else
+        return Variant(atof(value));
 }
 
 PG_TEXT_PARSER(Numeric)
@@ -457,7 +463,14 @@ inline Variant parseBinaryArray(const char * value, int length, uint32_t flags)
     return arr;
 }
 
-#define HANDLE_ARRAY(ty) case kOid##ty##Array: return parseBinaryArray(value, length, flags);
+#define HANDLE_ARRAY(ty) case kOid##ty##Array:  \
+    if (flags & ResultResource::kNativeArrays) { \
+        return parseBinaryArray(value, length, flags); \
+    } else { \
+        throw EnigmaException(std::string("Cannot fetch array type as string when using binary protocol: OID ") \
+                              + std::to_string(oid)); \
+    }
+
 #define HANDLE_TYPE(ty) case kOid##ty: return parseValue<kOid##ty, true>(value, length, flags);
 inline Variant parseBinaryValueOid(const char * value, int length, Oid oid, uint32_t flags)
 {
@@ -586,7 +599,13 @@ inline Variant parseTextArray(const char * value, int length, Oid elementOid, ui
     return arr;
 }
 
-#define HANDLE_ARRAY(ty) case kOid##ty##Array: return parseTextArray(value, length, kOid##ty, flags);
+#define HANDLE_ARRAY(ty) case kOid##ty##Array: \
+    if (flags & ResultResource::kNativeArrays) { \
+        return parseTextArray(value, length, kOid##ty, flags); \
+    } else { \
+        return String(value, (size_t) length, CopyStringMode{}); \
+    }
+
 #define HANDLE_TYPE(ty) case kOid##ty: return parseValue<kOid##ty, false>(value, length, flags);
 inline Variant parseTextValueOid(const char * value, int length, Oid oid, uint32_t flags)
 {

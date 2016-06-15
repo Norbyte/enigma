@@ -59,7 +59,8 @@ public:
         kNativeArrays = 0x02,
         kNativeDateTime = 0x04,
         kAllNative = kNativeJson | kNativeArrays | kNativeDateTime,
-        kNumericAsFloat = 0x08
+        kNumericAsFloat = 0x08,
+        kFastFloat = 0x10
     };
 
     ResultResource(PGresult *result);
