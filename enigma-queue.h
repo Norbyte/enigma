@@ -109,6 +109,8 @@ private:
     unsigned nextConnectionIndex_{ 0 };
     // Queries waiting for execution
     folly::MPMCQueue<QueueItem> queue_;
+    // Queries bound to a dedicated connection that are waiting for execution
+    folly::MPMCQueue<QueueItem> boundQueue_;
     folly::MPMCQueue<unsigned> idleConnections_;
     std::unordered_map<unsigned, sp_Connection> connectionMap_;
     std::unordered_map<unsigned, p_PlanCache> planCaches_;

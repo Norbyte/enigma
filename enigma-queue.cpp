@@ -247,7 +247,8 @@ const StaticString
 
 Pool::Pool(Array const & connectionOpts, Array const & poolOpts)
     : queue_(MaxQueueSize),
-    idleConnections_(MaxPoolSize) {
+      boundQueue_(MaxQueueSize),
+      idleConnections_(MaxPoolSize) {
     if (poolOpts.exists(s_PoolSize)) {
         auto size = (unsigned)poolOpts[s_PoolSize].toInt32();
         if (size < 1 || size > MaxPoolSize) {
@@ -299,16 +300,20 @@ void Pool::removeConnection(unsigned connectionId) {
 }
 
 QueryAwait * Pool::enqueue(p_Query query, PoolInterface * interface) {
-    if (queue_.size() >= maxQueueSize_) {
+    if (queue_.size() + boundQueue_.size() >= maxQueueSize_) {
         // TODO improve error reporting
         throw Exception("Enigma queue size exceeded");
     }
 
     ENIG_DEBUG("Pool::enqueue(): create QueryAwait");
     auto event = new QueryAwait(std::move(query));
-    queue_.blockingWrite(QueueItem{event, interface});
-    tryExecuteNext();
+    if (interface->connectionId == InvalidConnectionId) {
+        queue_.blockingWrite(QueueItem{event, interface});
+    } else {
+        boundQueue_.blockingWrite(QueueItem{event, interface});
+    }
 
+    tryExecuteNext();
     return event;
 }
 
@@ -336,13 +341,19 @@ unsigned Pool::assignConnectionId(PoolInterface * interface) {
 }
 
 void Pool::tryExecuteNext() {
-    if (idleConnections_.isEmpty()) {
-        return;
-    }
-
     QueueItem query;
-    if (!queue_.read(query)) {
-        return;
+    /*
+     * First check the queries assigned to running transactions, as they use
+     * a dedicated connection and don't consume connections from the shared pool.
+     */
+    if (!boundQueue_.read(query)) {
+        if (idleConnections_.isEmpty()) {
+            return;
+        }
+
+        if (!queue_.read(query)) {
+            return;
+        }
     }
 
     auto connectionId = assignConnectionId(query.interface);
@@ -396,17 +407,17 @@ void Pool::execute(unsigned connectionId, QueryAwait * query, PoolInterface * in
 }
 
 void Pool::queryCompleted(unsigned connectionId, PoolInterface * interface) {
-    ENIG_DEBUG("Pool::queryCompleted");
-
     auto connection = connectionMap_[connectionId];
     if (connection->inTransaction()) {
         /*
          * If a transaction is open, bind the connection to the pool making the query.
          */
         interface->connectionId = connectionId;
+        ENIG_DEBUG("Pool::queryCompleted: In transaction, not releasing connection to pool");
     } else {
         interface->connectionId = InvalidConnectionId;
         idleConnections_.blockingWrite(connectionId);
+        ENIG_DEBUG("Pool::queryCompleted: Connection added to idle pool");
     }
 
     tryExecuteNext();
@@ -484,7 +495,7 @@ void PoolInterface::sweep() {
     if (connectionId != Pool::InvalidConnectionId) {
         pool->releaseConnection(connectionId);
     }
-    
+
     pool.reset();
 }
 

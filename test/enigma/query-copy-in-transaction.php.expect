@@ -1,0 +1,8 @@
+NOTICE:  there is no transaction in progress
+array(1) {
+  [0]=>
+  array(1) {
+    ["a"]=>
+    int(1)
+  }
+}
