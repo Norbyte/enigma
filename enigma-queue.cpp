@@ -299,7 +299,7 @@ void Pool::removeConnection(unsigned connectionId) {
 }
 
 QueryAwait * Pool::enqueue(p_Query query, PoolInterface * interface) {
-    if (queue_.readCount() >= maxQueueSize_) {
+    if (queue_.size() >= maxQueueSize_) {
         // TODO improve error reporting
         throw Exception("Enigma queue size exceeded");
     }
@@ -336,6 +336,10 @@ unsigned Pool::assignConnectionId(PoolInterface * interface) {
 }
 
 void Pool::tryExecuteNext() {
+    if (idleConnections_.isEmpty()) {
+        return;
+    }
+
     QueueItem query;
     if (!queue_.read(query)) {
         return;
