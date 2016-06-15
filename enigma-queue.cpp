@@ -24,7 +24,7 @@ Array PlanInfo::mapNamedParameters(Array const & params) {
             + " named parameters, got " + std::to_string(params.size()));
     }
 
-    Array mapped;
+    Array mapped{Array::Create()};
     for (unsigned i = 0; i < parameterNameMap.size(); i++) {
         auto key = String(parameterNameMap[i]);
         auto value = params->nvGet(key.get());
@@ -44,7 +44,7 @@ Array PlanInfo::mapNumberedParameters(Array const & params) {
             + " parameters, got " + std::to_string(params.size()));
     }
 
-    Array mapped;
+    Array mapped{Array::Create()};
     for (unsigned i = 0; i < parameterCount; i++) {
         auto value = params->nvGet(i);
         if (value == nullptr) {
@@ -77,22 +77,28 @@ void PlanInfo::determineParameterType() {
 }
 
 bool PlanInfo::isValidPlaceholder(std::size_t pos) const {
-    // Check if the preceding byte is in [0-9a-zA-Z \r\n\t]
+    // Check if the preceding byte is in [0-9a-zA-Z (\r\n\t]
     if (
             pos != 0
             && !isspace(command[pos - 1])
             && !isalnum(command[pos - 1])
+            && command[pos - 1] != '('
+            && command[pos - 1] != ']'
+            && command[pos - 1] != ','
             ) {
         return false;
     }
 
-    // Check if the following byte is in [0-9a-zA-Z: \r\n\t]
+    // Check if the following byte is in [0-9a-zA-Z:) \r\n\t]
     // Allow ":", as parameter typecasting is fairly common
     if (
             pos < command.length() - 1
             && !isspace(command[pos + 1])
             && !isalnum(command[pos + 1])
             && command[pos + 1] != ':'
+            && command[pos + 1] != ')'
+            && command[pos + 1] != ']'
+            && command[pos + 1] != ','
             ) {
         return false;
     }
@@ -105,6 +111,9 @@ bool PlanInfo::isValidNamedPlaceholder(std::size_t pos) const {
     if (
             pos != 0
             && !isspace(command[pos - 1])
+            && command[pos - 1] != '('
+            && command[pos - 1] != '['
+            && command[pos - 1] != ','
             ) {
         return false;
     }
