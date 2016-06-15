@@ -298,21 +298,29 @@ void Pool::removeConnection(unsigned connectionId) {
     connectionMap_.erase(connectionId);
 }
 
-QueryAwait * Pool::enqueue(p_Query query) {
-    if (queue_.size() >= maxQueueSize_) {
+QueryAwait * Pool::enqueue(p_Query query, PoolInterface * interface) {
+    if (queue_.readCount() >= maxQueueSize_) {
         // TODO improve error reporting
         throw Exception("Enigma queue size exceeded");
     }
 
     ENIG_DEBUG("Pool::enqueue(): create QueryAwait");
     auto event = new QueryAwait(std::move(query));
-    queue_.blockingWrite(event);
+    queue_.blockingWrite(QueueItem{event, interface});
     tryExecuteNext();
 
     return event;
 }
 
-unsigned Pool::assignConnectionId() {
+void Pool::releaseConnection(unsigned connectionId) {
+    idleConnections_.blockingWrite(connectionId);
+}
+
+unsigned Pool::assignConnectionId(PoolInterface * interface) {
+    if (interface->connectionId != InvalidConnectionId) {
+        return interface->connectionId;
+    }
+
     // todo: random, RR selection
     unsigned connectionId;
     for (;;) {
@@ -328,17 +336,17 @@ unsigned Pool::assignConnectionId() {
 }
 
 void Pool::tryExecuteNext() {
-    QueryAwait * query;
+    QueueItem query;
     if (!queue_.read(query)) {
         return;
     }
 
-    auto connectionId = assignConnectionId();
-    executeNext(connectionId, query);
+    auto connectionId = assignConnectionId(query.interface);
+    execute(connectionId, query.query, query.interface);
 }
 
-void Pool::executeNext(unsigned connectionId, QueryAwait * query) {
-    ENIG_DEBUG("Pool::executeNext");
+void Pool::execute(unsigned connectionId, QueryAwait * query, PoolInterface * interface) {
+    ENIG_DEBUG("Pool::execute");
 
     auto connection = connectionMap_[connectionId];
     auto const & q = query->query();
@@ -369,23 +377,34 @@ void Pool::executeNext(unsigned connectionId, QueryAwait * query) {
                     Query::PrepareInit{}, plan->statementName, plan->planInfo.rewrittenCommand,
                     plan->planInfo.parameterCount));
             auto originalQuery = query->swapQuery(std::move(planQuery));
-            preparing_.insert(std::make_pair(connectionId, query));
+            preparing_.insert(std::make_pair(connectionId, QueueItem{query, interface}));
             pendingPrepare_.insert(std::make_pair(connectionId, std::move(originalQuery)));
         }
     } else {
         ENIG_DEBUG("Begin executing query");
     }
 
-    auto callback = [this, connectionId] {
-        this->queryCompleted(connectionId);
+    auto callback = [this, connectionId, interface] {
+        this->queryCompleted(connectionId, interface);
     };
     query->assign(connection);
     query->begin(callback);
 }
 
-void Pool::queryCompleted(unsigned connectionId) {
+void Pool::queryCompleted(unsigned connectionId, PoolInterface * interface) {
     ENIG_DEBUG("Pool::queryCompleted");
-    idleConnections_.blockingWrite(connectionId);
+
+    auto connection = connectionMap_[connectionId];
+    if (connection->inTransaction()) {
+        /*
+         * If a transaction is open, bind the connection to the pool making the query.
+         */
+        interface->connectionId = connectionId;
+    } else {
+        interface->connectionId = InvalidConnectionId;
+        idleConnections_.blockingWrite(connectionId);
+    }
+
     tryExecuteNext();
 }
 
@@ -478,7 +497,7 @@ Object HHVM_METHOD(PoolInterface, query, Object const & queryObj) {
         auto bindableParams = planInfo.mapParameters(queryData->params());
         auto query = new Query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
         query->setFlags(queryData->flags());
-        auto waitEvent = poolInterface->pool->enqueue(std::unique_ptr<Query>(query));
+        auto waitEvent = poolInterface->pool->enqueue(std::unique_ptr<Query>(query), poolInterface);
 
         return Object{waitEvent->getWaitHandle()};
     } catch (std::exception & e) {

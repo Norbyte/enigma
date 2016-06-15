@@ -3,7 +3,7 @@
 namespace Enigma {
 
 <<__Native>>
-function create_pool(array $options, array $poolOptions = []) : Pool;
+function create_pool(array $options, array $poolOptions) : Pool;
 
 
 <<__NativeData("QueryInterface")>>

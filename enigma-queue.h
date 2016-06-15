@@ -79,12 +79,14 @@ private:
 
 typedef std::unique_ptr<PlanCache> p_PlanCache;
 
+class PoolInterface;
 class Pool {
 public:
-    const unsigned DefaultQueueSize = 50;
-    const unsigned MaxQueueSize = 1000;
-    const unsigned DefaultPoolSize = 1;
-    const unsigned MaxPoolSize = 100;
+    const static unsigned DefaultQueueSize = 50;
+    const static unsigned MaxQueueSize = 1000;
+    const static unsigned DefaultPoolSize = 1;
+    const static unsigned MaxPoolSize = 100;
+    const static unsigned InvalidConnectionId = std::numeric_limits<unsigned>::max();
 
     Pool(Array const & connectionOpts, Array const & poolOpts);
     ~Pool();
@@ -92,29 +94,35 @@ public:
     Pool(Pool const &) = delete;
     Pool & operator = (Pool const &) = delete;
 
-    QueryAwait * enqueue(p_Query query);
+    QueryAwait * enqueue(p_Query query, PoolInterface * interface);
+    void releaseConnection(unsigned connectionId);
 
 private:
+    struct QueueItem {
+        QueryAwait * query;
+        PoolInterface * interface;
+    };
+
     unsigned maxQueueSize_{ DefaultQueueSize };
     // Number of connections we'll keep alive (even if they're idle)
     unsigned poolSize_{ DefaultPoolSize };
     unsigned nextConnectionIndex_{ 0 };
     // Queries waiting for execution
-    folly::MPMCQueue<QueryAwait *> queue_;
+    folly::MPMCQueue<QueueItem> queue_;
     folly::MPMCQueue<unsigned> idleConnections_;
     std::unordered_map<unsigned, sp_Connection> connectionMap_;
     std::unordered_map<unsigned, p_PlanCache> planCaches_;
     // Statements we're currently preparing
-    std::unordered_map<unsigned, QueryAwait *> preparing_;
+    std::unordered_map<unsigned, QueueItem> preparing_;
     // Queries to execute after the statement was prepared
     std::unordered_map<unsigned, p_Query> pendingPrepare_;
 
-    unsigned assignConnectionId();
+    unsigned assignConnectionId(PoolInterface * interface);
     void addConnection(Array const & options);
     void removeConnection(unsigned connectionId);
     void tryExecuteNext();
-    void executeNext(unsigned connectionId, QueryAwait * query);
-    void queryCompleted(unsigned connectionId);
+    void execute(unsigned connectionId, QueryAwait * query, PoolInterface * interface);
+    void queryCompleted(unsigned connectionId, PoolInterface * interface);
 };
 
 typedef std::shared_ptr<Pool> sp_Pool;
@@ -139,6 +147,7 @@ public:
     ~PoolInterface();
 
     sp_Pool pool;
+    unsigned connectionId{Pool::InvalidConnectionId};
 
 private:
     void init(sp_Pool p);
