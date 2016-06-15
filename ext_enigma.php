@@ -42,7 +42,7 @@ class QueryResult {
     public function fetchArrays(int $flags = 0) : array;
 
     <<__Native>>
-    public function fetchObjects(string $cls, int $flags = 0) : array;
+    public function fetchObjects(string $cls, int $flags = 0, array $constructorArgs = []) : array;
 }
 
 }
