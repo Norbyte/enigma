@@ -481,6 +481,10 @@ void PoolInterface::init(sp_Pool p) {
 }
 
 void PoolInterface::sweep() {
+    if (connectionId != Pool::InvalidConnectionId) {
+        pool->releaseConnection(connectionId);
+    }
+    
     pool.reset();
 }
 
