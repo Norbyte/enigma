@@ -78,7 +78,6 @@ private:
 
 typedef std::unique_ptr<PlanCache> p_PlanCache;
 
-
 class Pool {
 public:
     const unsigned DefaultQueueSize = 50;
@@ -119,6 +118,19 @@ private:
 };
 
 typedef std::shared_ptr<Pool> sp_Pool;
+
+class PersistentPoolStorage {
+public:
+    sp_Pool make(Array const & connectionOpts, Array const & poolOpts);
+    sp_Pool add(Array const & connectionOpts, Array const & poolOpts);
+    void remove(Array const & connectionOpts);
+
+private:
+    ReadWriteMutex lock_;
+    std::unordered_map<std::string, sp_Pool> pools_;
+
+    static std::string makeKey(Array const & connectionOpts);
+};
 
 class PoolInterface {
 public:

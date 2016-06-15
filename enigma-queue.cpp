@@ -394,6 +394,54 @@ void Pool::queryCompleted(unsigned connectionId) {
 }
 
 
+sp_Pool PersistentPoolStorage::make(Array const & connectionOpts, Array const & poolOpts) {
+    {
+        ReadLock l(lock_);
+        auto connectionKey = makeKey(connectionOpts);
+        auto it = pools_.find(connectionKey);
+        if (it != pools_.end()) {
+            ENIG_DEBUG("PersistentPoolStorage::make() reuse existing connection");
+            return it->second;
+        }
+    }
+
+    return add(connectionOpts, poolOpts);
+}
+
+sp_Pool PersistentPoolStorage::add(Array const & connectionOpts, Array const & poolOpts) {
+    WriteLock l(lock_);
+
+    ENIG_DEBUG("PersistentPoolStorage::add()");
+    auto connectionKey = makeKey(connectionOpts);
+    auto pool = std::make_shared<Enigma::Pool>(connectionOpts, poolOpts);
+    pools_.insert(std::make_pair(connectionKey, pool));
+    return pool;
+}
+
+void PersistentPoolStorage::remove(Array const & connectionOpts) {
+    WriteLock l(lock_);
+
+    ENIG_DEBUG("PersistentPoolStorage::remove()");
+    auto connectionKey = makeKey(connectionOpts);
+    auto it = pools_.find(connectionKey);
+    if (it != pools_.end()) {
+        pools_.erase(it);
+    }
+}
+
+std::string PersistentPoolStorage::makeKey(Array const & connectionOpts) {
+    String key;
+    for (ArrayIter param(connectionOpts); param; ++param) {
+        key += param.first().toString();
+        key += "=";
+        key += param.second().toString();
+        key += ";";
+    }
+
+    return key.toCppString();
+}
+
+
 const StaticString s_PoolInterface("PoolInterface"),
         s_PoolInterfaceNS("Enigma\\Pool"),
         s_QueryInterface("QueryInterface"),

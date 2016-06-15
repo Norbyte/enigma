@@ -5,9 +5,28 @@
 
 namespace HPHP {
 
+    namespace {
+        Enigma::PersistentPoolStorage s_pools;
+    }
+
+    const StaticString
+        s_Persistent("persistent");
+
     Object HHVM_FUNCTION(create_pool, Array const & connectionOpts, Array const & poolOpts) {
-        auto pool = std::make_shared<Enigma::Pool>(connectionOpts, poolOpts);
-        auto poolInterface = Enigma::PoolInterface::newInstance(pool);
+        bool persistent = false;
+        if (poolOpts.exists(s_Persistent)) {
+            persistent = poolOpts[s_Persistent].toBoolean();
+        }
+
+        Object poolInterface;
+        if (persistent) {
+            auto pool = s_pools.make(connectionOpts, poolOpts);
+            poolInterface = Enigma::PoolInterface::newInstance(pool);
+        } else {
+            auto pool = std::make_shared<Enigma::Pool>(connectionOpts, poolOpts);
+            poolInterface = Enigma::PoolInterface::newInstance(pool);
+        }
+
         return poolInterface;
     }
 
