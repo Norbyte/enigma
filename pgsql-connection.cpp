@@ -125,8 +125,7 @@ ConnectionResource::TransactionStatus ConnectionResource::transactionStatus() co
 
 bool ConnectionResource::inTransaction() const {
     auto state = transactionStatus();
-    return state == TransactionStatus::Active ||
-            state == TransactionStatus::InTransaction ||
+    return state == TransactionStatus::InTransaction ||
             state == TransactionStatus::InError;
 }
 
