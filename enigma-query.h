@@ -117,7 +117,8 @@ public:
         kIgnoreUndeclared = 0x0200,
         kAllowUndeclared = 0x0400,
         kDontCallCtor = 0x0800,
-        kNumbered = 0x1000
+        kNumbered = 0x1000,
+        kConstructBeforeBinding = 0x2000
     };
 
     QueryResult();

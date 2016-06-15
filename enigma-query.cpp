@@ -258,7 +258,7 @@ Array HHVM_METHOD(QueryResult, fetchArrays, int64_t flags) {
     auto data = Native::data<QueryResult>(this_);
     Pgsql::ResultResource const & resource = data->resource();
 
-    Array results;
+    Array results{Array::Create()};
     auto rows = resource.numTuples(),
          cols = resource.numFields();
 
@@ -272,7 +272,7 @@ Array HHVM_METHOD(QueryResult, fetchArrays, int64_t flags) {
     uint32_t valueFlags = (uint32_t)(flags & QueryResult::kResultResourceMask);
     bool numbered = (bool)(flags & QueryResult::kNumbered);
     for (auto row = 0; row < rows; row++) {
-        Array rowArr;
+        Array rowArr{Array::Create()};
         if (numbered)
         {
             // Fetch arrays with 0, 1, ..., n as keys
@@ -295,8 +295,8 @@ Array HHVM_METHOD(QueryResult, fetchArrays, int64_t flags) {
 }
 
 
-Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags) {
-    auto rowClass = Unit::lookupClass(cls.get());
+Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags, Array const & args) {
+    auto rowClass = Unit::getClass(cls.get(), true);
     if (rowClass == nullptr) {
         throwEnigmaException(std::string("Could not find result row class: ") + cls.c_str());
     }
@@ -304,7 +304,7 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags) 
     auto ctor = rowClass->getCtor();
     auto data = Native::data<QueryResult>(this_);
     Pgsql::ResultResource const & resource = data->resource();
-    Array results;
+    Array results{Array::Create()};
     auto rows = resource.numTuples(),
          cols = resource.numFields();
 
@@ -315,6 +315,7 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags) 
 
     uint32_t valueFlags = (uint32_t)(flags & QueryResult::kResultResourceMask);
     bool callCtor = !(flags & QueryResult::kDontCallCtor);
+    bool constructBeforeBind = (bool)(flags & QueryResult::kConstructBeforeBinding);
     /*
      * When binding to properties, we'll set class properties directly in
      * the property vector, thus bypassing __set and dynamic properties.
@@ -348,9 +349,9 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags) 
 
         for (auto row = 0; row < rows; row++) {
             Object rowObj{rowClass};
-            if (callCtor) {
+            if (constructBeforeBind && callCtor) {
                 TypedValue ret;
-                g_context->invokeFunc(&ret, ctor, Array(), rowObj.get());
+                g_context->invokeFunc(&ret, ctor, args, rowObj.get());
             }
 
             auto props = rowObj->propVec();
@@ -367,6 +368,11 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags) 
                 }
             }
 
+            if (!constructBeforeBind && callCtor) {
+                TypedValue ret;
+                g_context->invokeFunc(&ret, ctor, args, rowObj.get());
+            }
+
             results.append(rowObj);
         }
     } else {
@@ -378,13 +384,18 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags) 
         for (auto row = 0; row < rows; row++) {
             // Construct a new row object and call the setter on each property
             Object rowObj{rowClass};
-            if (callCtor) {
+            if (constructBeforeBind && callCtor) {
                 TypedValue ret;
-                g_context->invokeFunc(&ret, ctor, Array(), rowObj.get());
+                g_context->invokeFunc(&ret, ctor, args, rowObj.get());
             }
 
             for (auto col = 0; col < cols; col++) {
                 rowObj->o_set(colNames[col], resource.typedValue(row, col, colTypes[col], valueFlags));
+            }
+
+            if (!constructBeforeBind && callCtor) {
+                TypedValue ret;
+                g_context->invokeFunc(&ret, ctor, args, rowObj.get());
             }
 
             results.append(rowObj);
@@ -635,12 +646,14 @@ void registerClasses() {
     HHVM_RCC_INT(QueryResultNS, NATIVE_DATETIME, Pgsql::ResultResource::kNativeDateTime);
     HHVM_RCC_INT(QueryResultNS, NATIVE, Pgsql::ResultResource::kAllNative);
     HHVM_RCC_INT(QueryResultNS, NUMERIC_FLOAT, Pgsql::ResultResource::kNumericAsFloat);
+    HHVM_RCC_INT(QueryResultNS, FAST_FLOAT, Pgsql::ResultResource::kFastFloat);
 
     HHVM_RCC_INT(QueryResultNS, BIND_TO_PROPERTIES, QueryResult::kBindToProperties);
     HHVM_RCC_INT(QueryResultNS, IGNORE_UNDECLARED, QueryResult::kIgnoreUndeclared);
     HHVM_RCC_INT(QueryResultNS, ALLOW_UNDECLARED, QueryResult::kAllowUndeclared);
     HHVM_RCC_INT(QueryResultNS, DONT_CALL_CTOR, QueryResult::kDontCallCtor);
     HHVM_RCC_INT(QueryResultNS, NUMBERED, QueryResult::kNumbered);
+    HHVM_RCC_INT(QueryResultNS, CONSTRUCT_BEFORE_BINDING, QueryResult::kConstructBeforeBinding);
 }
 
 }
