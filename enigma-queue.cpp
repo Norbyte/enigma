@@ -245,7 +245,9 @@ const StaticString
     s_PoolSize("pool_size"),
     s_QueueSize("queue_size");
 
-Pool::Pool(Array const & connectionOpts, Array const & poolOpts) {
+Pool::Pool(Array const & connectionOpts, Array const & poolOpts)
+    : queue_(MaxQueueSize),
+    idleConnections_(MaxPoolSize) {
     if (poolOpts.exists(s_PoolSize)) {
         auto size = (unsigned)poolOpts[s_PoolSize].toInt32();
         if (size < 1 || size > MaxPoolSize) {
@@ -278,7 +280,7 @@ void Pool::addConnection(Array const & options) {
     connectionMap_.insert(std::make_pair(connectionId, connection));
     auto planCache = p_PlanCache(new PlanCache());
     planCaches_.insert(std::make_pair(connectionId, std::move(planCache)));
-    idleConnections_.push_back(connectionId);
+    idleConnections_.blockingWrite(connectionId);
 }
 
 void Pool::removeConnection(unsigned connectionId) {
@@ -294,10 +296,6 @@ void Pool::removeConnection(unsigned connectionId) {
 
     planCaches_.erase(connectionId);
     connectionMap_.erase(connectionId);
-    auto idleIt = std::find(idleConnections_.begin(), idleConnections_.end(), connectionId);
-    if (idleIt != idleConnections_.end()) {
-        idleConnections_.erase(idleIt);
-    }
 }
 
 QueryAwait * Pool::enqueue(p_Query query) {
@@ -306,42 +304,43 @@ QueryAwait * Pool::enqueue(p_Query query) {
         throw Exception("Enigma queue size exceeded");
     }
 
-    Lock lock(mutex_);
-    bool shouldExecute = queue_.empty() && !idleConnections_.empty();
     ENIG_DEBUG("Pool::enqueue(): create QueryAwait");
     auto event = new QueryAwait(std::move(query));
-    queue_.push(event);
-
-    if (shouldExecute) {
-        executeNext();
-    }
+    queue_.blockingWrite(event);
+    tryExecuteNext();
 
     return event;
 }
 
 unsigned Pool::assignConnectionId() {
-    always_assert(!idleConnections_.empty());
     // todo: random, RR selection
-    auto index = rand() % idleConnections_.size();
-    unsigned connectionId = idleConnections_[index];
-    if (index < idleConnections_.size() - 1) {
-        idleConnections_[index] = *idleConnections_.rbegin();
+    unsigned connectionId;
+    for (;;) {
+        idleConnections_.blockingRead(connectionId);
+        // Handle case where the connection ID is still in the idle queue,
+        // but the connection was already closed.
+        if (connectionMap_.find(connectionId) != connectionMap_.end()) {
+            break;
+        }
     }
 
-    idleConnections_.pop_back();
     return connectionId;
 }
 
-void Pool::executeNext() {
-    ENIG_DEBUG("Pool::executeNext");
-    always_assert(!queue_.empty());
+void Pool::tryExecuteNext() {
+    QueryAwait * query;
+    if (!queue_.read(query)) {
+        return;
+    }
 
     auto connectionId = assignConnectionId();
+    executeNext(connectionId, query);
+}
+
+void Pool::executeNext(unsigned connectionId, QueryAwait * query) {
+    ENIG_DEBUG("Pool::executeNext");
+
     auto connection = connectionMap_[connectionId];
-
-    auto query = queue_.front();
-    queue_.pop();
-
     auto const & q = query->query();
 
     /*
@@ -378,7 +377,6 @@ void Pool::executeNext() {
     }
 
     auto callback = [this, connectionId] {
-        Lock lock(mutex_);
         this->queryCompleted(connectionId);
     };
     query->assign(connection);
@@ -387,12 +385,9 @@ void Pool::executeNext() {
 
 void Pool::queryCompleted(unsigned connectionId) {
     ENIG_DEBUG("Pool::queryCompleted");
-    idleConnections_.push_back(connectionId);
-    if (!queue_.empty()) {
-        executeNext();
-    }
+    idleConnections_.blockingWrite(connectionId);
+    tryExecuteNext();
 }
-
 
 sp_Pool PersistentPoolStorage::make(Array const & connectionOpts, Array const & poolOpts) {
     {

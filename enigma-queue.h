@@ -2,6 +2,7 @@
 #define HPHP_ENIGMA_QUEUE_H
 
 #include "hphp/runtime/ext/extension.h"
+#include <folly/MPMCQueue.h>
 #include "enigma-common.h"
 #include "enigma-query.h"
 
@@ -99,8 +100,8 @@ private:
     unsigned poolSize_{ DefaultPoolSize };
     unsigned nextConnectionIndex_{ 0 };
     // Queries waiting for execution
-    std::queue<QueryAwait *> queue_;
-    std::vector<unsigned> idleConnections_;
+    folly::MPMCQueue<QueryAwait *> queue_;
+    folly::MPMCQueue<unsigned> idleConnections_;
     std::unordered_map<unsigned, sp_Connection> connectionMap_;
     std::unordered_map<unsigned, p_PlanCache> planCaches_;
     // Statements we're currently preparing
@@ -108,12 +109,11 @@ private:
     // Queries to execute after the statement was prepared
     std::unordered_map<unsigned, p_Query> pendingPrepare_;
 
-    Mutex mutex_;
-
     unsigned assignConnectionId();
     void addConnection(Array const & options);
     void removeConnection(unsigned connectionId);
-    void executeNext();
+    void tryExecuteNext();
+    void executeNext(unsigned connectionId, QueryAwait * query);
     void queryCompleted(unsigned connectionId);
 };
 
