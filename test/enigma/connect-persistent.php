@@ -1,7 +1,7 @@
 <?php
 
 $connectionOpts = ['host' => '127.0.0.1', 'user' => 'ndo', 'password' => 'ndo', 'dbname' => 'ndo'];
-$poolOpts = ['persistent' => true, 'poolSize' => 1];
+$poolOpts = ['persistent' => true, 'pool_size' => 1];
 
 function get_pg_pid($pool)
 {
