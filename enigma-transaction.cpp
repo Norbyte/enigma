@@ -37,7 +37,7 @@ ConnectionId TransactionLifetimeManager::assignConnection(PoolHandle * handle) {
 
 
 QueryAwait * TransactionLifetimeManager::assignQuery(ConnectionId cid) {
-    auto handle = connectionsInTransaction_[cid];
+    auto handle = connections_[cid].handle;
     if (handle) {
         always_assert(!handle->transaction.executing);
         always_assert(handle->transaction.connectionId == cid);
@@ -79,37 +79,75 @@ void TransactionLifetimeManager::notifyHandleReleased(PoolHandle * handle) {
     if (cid != Pool::InvalidConnectionId) {
         ENIG_DEBUG("TLM::notifyHandleReleased(): Drop transaction");
         finishTransaction(cid, handle);
-        handle->pool->releaseConnection(cid);
+        auto connection = handle->pool->connection(cid);
+        if (!connection->inTransaction()) {
+            handle->pool->releaseConnection(cid);
+        }
     }
 }
 
 
 void TransactionLifetimeManager::notifyConnectionAdded(ConnectionId cid) {
-    connectionsInTransaction_.insert(std::make_pair(cid, nullptr));
+    connections_.insert(std::make_pair(cid, ConnectionState()));
 }
 
 
 void TransactionLifetimeManager::notifyConnectionRemoved(ConnectionId cid) {
-    connectionsInTransaction_.erase(connectionsInTransaction_.find(cid));
+    connections_.erase(connections_.find(cid));
 }
 
 
 void TransactionLifetimeManager::beginTransaction(ConnectionId cid, PoolHandle * handle) {
     always_assert(handle->transaction.connectionId == Pool::InvalidConnectionId);
-    connectionsInTransaction_[cid] = handle;
+    connections_[cid].handle = handle;
     handle->transaction.connectionId = cid;
 }
 
 
 void TransactionLifetimeManager::finishTransaction(ConnectionId cid, PoolHandle * handle) {
-    connectionsInTransaction_[cid] = nullptr;
+    connections_[cid].handle = nullptr;
     handle->transaction.connectionId = Pool::InvalidConnectionId;
 
-    // Move queries that were queued after COMMIT/ROLLBACK to the shared queue
-    QueryAwait * query;
-    while (handle->transaction.pendingQueries.read(query)) {
-        handle->pool->enqueue(query, handle);
+    // Move queries that were queued after COMMIT/ROLLBACK/sweep to the shared queue
+    QueryAwait * event;
+    while (handle->transaction.pendingQueries.read(event)) {
+        handle->pool->enqueue(event, handle);
     }
+
+    auto connection = handle->pool->connection(cid);
+    if (connection->inTransaction()) {
+        if (handle->transaction.executing) {
+            connections_[cid].rollingBack = true;
+        } else {
+            rollback(cid, connection, handle->pool);
+        }
+    }
+}
+
+
+void TransactionLifetimeManager::rollback(ConnectionId cid, sp_Connection connection, sp_Pool pool) {
+    ENIG_DEBUG("TLM::rollback(): Rolling back active transaction");
+    auto query = new Query(Query::RawInit{}, "rollback");
+    auto event = new QueryAwait(p_Query(query));
+    event->assign(connection);
+
+    auto callback = [=] () {
+        if (!event->succeeded()) {
+            ENIG_DEBUG("TLM::rollback(): Failed: " << event->lastError().c_str());
+        }
+        this->rollbackCompleted(cid, connection, pool, event->succeeded());
+    };
+    event->begin(callback);
+}
+
+
+void TransactionLifetimeManager::rollbackCompleted(ConnectionId cid, sp_Connection connection, sp_Pool pool, bool succeeded) {
+    if (!succeeded) {
+        ENIG_DEBUG("TLM::rollbackCompleted(): Resetting connection");
+        connection->beginReset();
+    }
+
+    pool->releaseConnection(cid);
 }
 
 

@@ -150,6 +150,7 @@ public:
 
     Connection(Array const & options);
 
+    void beginReset();
     void executeQuery(p_Query query, QueryCompletionCallback callback);
     void cancelQuery();
 
@@ -237,6 +238,14 @@ public:
     void assign(sp_Connection connection);
     void begin(CompletionCallback callback);
     void cancelQuery();
+
+    inline bool succeeded() const {
+        return succeeded_;
+    }
+
+    inline std::string const & lastError() const {
+        return lastError_;
+    }
 
     inline Query const & query() const {
         always_assert(query_);

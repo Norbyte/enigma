@@ -393,7 +393,7 @@ void Pool::execute(ConnectionId connectionId, QueryAwait * query, PoolHandle * h
              * auto assigned statement handle.
              */
             ENIG_DEBUG("Begin executing cached prepared stmt");
-            std::unique_ptr<Query> execQuery(new Query(
+            p_Query execQuery(new Query(
                     Query::PreparedInit{}, plan->statementName, q.params()));
             query->swapQuery(std::move(execQuery));
         } else {
@@ -403,7 +403,7 @@ void Pool::execute(ConnectionId connectionId, QueryAwait * query, PoolHandle * h
              */
             ENIG_DEBUG("Begin preparing");
             plan = planCaches_[connectionId]->assignPlan(q.command().c_str());
-            std::unique_ptr<Query> planQuery(new Query(
+            p_Query planQuery(new Query(
                     Query::PrepareInit{}, plan->statementName, plan->planInfo.rewrittenCommand,
                     plan->planInfo.parameterCount));
             auto originalQuery = query->swapQuery(std::move(planQuery));
@@ -509,6 +509,7 @@ void PoolHandle::init(sp_Pool p) {
 }
 
 void PoolHandle::sweep() {
+    ENIG_DEBUG("PoolHandle::sweep()");
     if (pool) {
         pool->releaseHandle(this);
     }
@@ -520,6 +521,10 @@ void PoolHandle::sweep() {
 
 Object HHVM_METHOD(PoolHandle, query, Object const & queryObj) {
     auto poolHandle = Native::data<PoolHandle>(this_);
+    if (!poolHandle->pool) {
+        throwEnigmaException(
+                "Pool::query(): Cannot execute a query after the pool handle was released");
+    }
 
     auto queryClass = Unit::lookupClass(s_QueryInterfaceNS.get());
     if (!queryObj.instanceof(queryClass)) {
@@ -534,12 +539,23 @@ Object HHVM_METHOD(PoolHandle, query, Object const & queryObj) {
         auto bindableParams = planInfo.mapParameters(queryData->params());
         auto query = new Query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
         query->setFlags(queryData->flags());
-        auto waitEvent = poolHandle->pool->enqueue(std::unique_ptr<Query>(query), poolHandle);
+        auto waitEvent = poolHandle->pool->enqueue(p_Query(query), poolHandle);
 
         return Object{waitEvent->getWaitHandle()};
     } catch (std::exception & e) {
         throwEnigmaException(e.what());
     }
+}
+
+
+void HHVM_METHOD(PoolHandle, release) {
+    auto poolHandle = Native::data<PoolHandle>(this_);
+    if (!poolHandle->pool) {
+        throwEnigmaException(
+                "Pool::release(): Cannot release a pool handle multiple times");
+    }
+
+    poolHandle->sweep();
 }
 
 
@@ -579,6 +595,7 @@ void HHVM_METHOD(QueryInterface, setBinary, bool enabled) {
 
 void registerQueueClasses() {
     ENIGMA_NAMED_ME(PoolHandle, Pool, query);
+    ENIGMA_NAMED_ME(PoolHandle, Pool, release);
     Native::registerNativeDataInfo<PoolHandle>(s_PoolHandle.get());
 
     ENIGMA_NAMED_ME(QueryInterface, Query, __construct);

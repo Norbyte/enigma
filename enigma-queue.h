@@ -199,13 +199,14 @@ public:
 
     ~PoolHandle();
 
+    void sweep();
+
     sp_Pool pool;
     std::atomic<unsigned> runningQueries {0};
     TransactionState transaction;
 
 private:
     void init(sp_Pool p);
-    void sweep();
 };
 
 class QueryInterface {

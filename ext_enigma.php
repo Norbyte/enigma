@@ -22,6 +22,9 @@ class Query {
 <<__NativeData("PoolHandle")>>
 class Pool {
     <<__Native>>
+    function release() : void;
+
+    <<__Native>>
     function query(Query $query) : Awaitable<QueryResult>;
 }
 

@@ -428,6 +428,13 @@ void Connection::beginConnect() {
     }
 }
 
+void Connection::beginReset() {
+    writing_ = true;
+    ENIG_DEBUG("Connection::beginReset()");
+    resource_->resetStart();
+    state_ = State::Resetting;
+}
+
 void Connection::executeQuery(p_Query query, QueryCompletionCallback callback) {
     if (hasQueuedQuery_) {
         throw EnigmaException("A query is already queued on this connection");

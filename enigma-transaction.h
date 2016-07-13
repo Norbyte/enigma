@@ -40,10 +40,17 @@ public:
     virtual void notifyConnectionRemoved(ConnectionId cid) override;
 
 private:
-    std::map<ConnectionId, PoolHandle *> connectionsInTransaction_;
+    struct ConnectionState {
+        PoolHandle * handle {nullptr};
+        bool rollingBack {false};
+    };
+
+    std::map<ConnectionId, ConnectionState> connections_;
 
     void beginTransaction(ConnectionId cid, PoolHandle * handle);
     void finishTransaction(ConnectionId cid, PoolHandle * handle);
+    void rollback(ConnectionId cid, sp_Connection connection, sp_Pool pool);
+    void rollbackCompleted(ConnectionId cid, sp_Connection connection, sp_Pool pool, bool succeeded);
 };
 
 }
