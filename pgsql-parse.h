@@ -341,24 +341,18 @@ PG_TEXT_PARSER(Int8)
 
 PG_TEXT_PARSER(Float4)
 {
-    if (flags & ResultResource::kFastFloat)
-        return Variant(fast_atof<float>(value));
-    else
-        return Variant(atof(value));
+    return Variant(atof(value));
 }
 
 PG_TEXT_PARSER(Float8)
 {
-    if (flags & ResultResource::kFastFloat)
-        return Variant(fast_atof<double>(value));
-    else
-        return Variant(atof(value));
+    return Variant(atof(value));
 }
 
 PG_TEXT_PARSER(Numeric)
 {
     if (flags & ResultResource::kNumericAsFloat)
-        return Variant(fast_atof<double>(value));
+        return Variant(atof(value));
     else
         PG_PARSE_STRING
 }

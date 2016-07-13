@@ -127,7 +127,6 @@ testQuery('Huge num params/Few cols/Few rows',
     'with t as (select ' . str_repeat('? ::integer, ', 1000) . '1) select 1, 2, 3, 4 from generate_series(1, 10)',
     array_fill(0, 1000, 1)
 );
-
 testQuery('Integer / text',
     'select 1 as a, 2 as b, 3 as c, 4 as d, 5 as e from generate_series(1, 1000)',
     []
@@ -137,7 +136,11 @@ testQuery('Long integer / text',
     []
 );
 testQuery('Float / text',
-    'select 11111.1::float as a, 22222.2::float as b, 33333.3::float as c, 44444.4::float as d, 55555.5::float as e from generate_series(1, 1000)',
+    'select 11111.1::float4 as a, 22222.2::float4 as b, 33333.3::float4 as c, 44444.4::float4 as d, 55555.5::float4 as e from generate_series(1, 200)',
+    []
+);
+testQuery('Double / text',
+    'select 11111.1::float as a, 22222.2::float as b, 33333.3::float as c, 44444.4::float as d, 55555.5::float as e from generate_series(1, 200)',
     []
 );
 testQuery('Bool / text',
@@ -164,7 +167,11 @@ testQuery('Long integer / binary',
     [], false, null, 0, Enigma\Query::BINARY
 );
 testQuery('Float / binary',
-    'select 11111.1::float as a, 22222.2::float as b, 33333.3::float as c, 44444.4::float as d, 55555.5::float as e from generate_series(1, 1000)',
+    'select 11111.1::float4 as a, 22222.2::float4 as b, 33333.3::float4 as c, 44444.4::float4 as d, 55555.5::float4 as e from generate_series(1, 200)',
+    [], false, null, 0, Enigma\Query::BINARY
+);
+testQuery('Double / binary',
+    'select 11111.1::float as a, 22222.2::float as b, 33333.3::float as c, 44444.4::float as d, 55555.5::float as e from generate_series(1, 200)',
     [], false, null, 0, Enigma\Query::BINARY
 );
 testQuery('Bool / binary',
@@ -192,11 +199,11 @@ testQuery('Med cols/Many rows/UserClass',
 );
 testQuery('Med cols/Many rows/UserClass/Bind',
     'select 1 as a, 2 as b, 3 as c, 4 as d, 5 as e from generate_series(1, 1000)',
-    [], true, TestClass::class, ENIG_BIND_TO_PROPERTIES
+    [], true, TestClass::class, Enigma\QueryResult::BIND_TO_PROPERTIES
 );
 testQuery('Med cols/Many rows/UserClass/BindNoCtor',
     'select 1 as a, 2 as b, 3 as c, 4 as d, 5 as e from generate_series(1, 1000)',
-    [], true, TestClass::class, ENIG_BIND_TO_PROPERTIES | ENIG_DONT_CALL_CTOR
+    [], true, TestClass::class, Enigma\QueryResult::BIND_TO_PROPERTIES | Enigma\QueryResult::DONT_CALL_CTOR
 );
 
 testQuery('Short queries/PlanCache', 'select 1 as a', [], false, null, 0, Enigma\Query::CACHE_PLAN);

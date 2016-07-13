@@ -653,7 +653,6 @@ void registerClasses() {
     HHVM_RCC_INT(QueryResultNS, NATIVE_DATETIME, Pgsql::ResultResource::kNativeDateTime);
     HHVM_RCC_INT(QueryResultNS, NATIVE, Pgsql::ResultResource::kAllNative);
     HHVM_RCC_INT(QueryResultNS, NUMERIC_FLOAT, Pgsql::ResultResource::kNumericAsFloat);
-    HHVM_RCC_INT(QueryResultNS, FAST_FLOAT, Pgsql::ResultResource::kFastFloat);
 
     HHVM_RCC_INT(QueryResultNS, BIND_TO_PROPERTIES, QueryResult::kBindToProperties);
     HHVM_RCC_INT(QueryResultNS, IGNORE_UNDECLARED, QueryResult::kIgnoreUndeclared);
