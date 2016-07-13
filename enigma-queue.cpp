@@ -318,7 +318,9 @@ QueryAwait * Pool::enqueue(p_Query query, PoolHandle * handle) {
 
 void Pool::enqueue(QueryAwait * event, PoolHandle * handle) {
     if (!transactionLifetimeManager_->enqueue(event, handle)) {
-        queue_.blockingWrite(QueueItem{event, handle});
+        if (!queue_.writeIfNotFull(QueueItem{event, handle})) {
+            throw Exception("Enigma queue size exceeded");
+        }
     }
 
     tryExecuteNext();
