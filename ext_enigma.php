@@ -19,7 +19,7 @@ class Query {
 }
 
 
-<<__NativeData("PoolInterface")>>
+<<__NativeData("PoolHandle")>>
 class Pool {
     <<__Native>>
     function query(Query $query) : Awaitable<QueryResult>;

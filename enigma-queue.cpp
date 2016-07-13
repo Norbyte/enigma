@@ -1,4 +1,5 @@
 #include "enigma-queue.h"
+#include "enigma-transaction.h"
 #include "hphp/runtime/vm/native-data.h"
 
 namespace HPHP {
@@ -241,14 +242,16 @@ std::string PlanCache::generatePlanName() {
     return PlanNamePrefix + std::to_string(nextPlanId_++);
 }
 
+AssignmentManager::~AssignmentManager() {}
+
 const StaticString
     s_PoolSize("pool_size"),
     s_QueueSize("queue_size");
 
 Pool::Pool(Array const & connectionOpts, Array const & poolOpts)
     : queue_(MaxQueueSize),
-      boundQueue_(MaxQueueSize),
-      idleConnections_(MaxPoolSize) {
+      idleConnections_(MaxPoolSize),
+      transactionLifetimeManager_(new TransactionLifetimeManager()) {
     if (poolOpts.exists(s_PoolSize)) {
         auto size = (unsigned)poolOpts[s_PoolSize].toInt32();
         if (size < 1 || size > MaxPoolSize) {
@@ -282,9 +285,11 @@ void Pool::addConnection(Array const & options) {
     auto planCache = p_PlanCache(new PlanCache());
     planCaches_.insert(std::make_pair(connectionId, std::move(planCache)));
     idleConnections_.blockingWrite(connectionId);
+    transactionLifetimeManager_->notifyConnectionAdded(connectionId);
 }
 
-void Pool::removeConnection(unsigned connectionId) {
+void Pool::removeConnection(ConnectionId connectionId) {
+    transactionLifetimeManager_->notifyConnectionRemoved(connectionId);
     auto prepareIt = preparing_.find(connectionId);
     if (prepareIt != preparing_.end()) {
         preparing_.erase(prepareIt);
@@ -299,35 +304,51 @@ void Pool::removeConnection(unsigned connectionId) {
     connectionMap_.erase(connectionId);
 }
 
-QueryAwait * Pool::enqueue(p_Query query, PoolInterface * interface) {
-    if (queue_.size() + boundQueue_.size() >= maxQueueSize_) {
+QueryAwait * Pool::enqueue(p_Query query, PoolHandle * handle) {
+    if (queue_.size() >= maxQueueSize_) {
         // TODO improve error reporting
         throw Exception("Enigma queue size exceeded");
     }
 
     ENIG_DEBUG("Pool::enqueue(): create QueryAwait");
     auto event = new QueryAwait(std::move(query));
-    if (interface->connectionId == InvalidConnectionId) {
-        queue_.blockingWrite(QueueItem{event, interface});
-    } else {
-        boundQueue_.blockingWrite(QueueItem{event, interface});
-    }
-
-    tryExecuteNext();
+    enqueue(event, handle);
     return event;
 }
 
-void Pool::releaseConnection(unsigned connectionId) {
+void Pool::enqueue(QueryAwait * event, PoolHandle * handle) {
+    if (!transactionLifetimeManager_->enqueue(event, handle)) {
+        queue_.blockingWrite(QueueItem{event, handle});
+    }
+
+    tryExecuteNext();
+}
+
+void Pool::releaseConnection(ConnectionId connectionId) {
     idleConnections_.blockingWrite(connectionId);
 }
 
-unsigned Pool::assignConnectionId(PoolInterface * interface) {
-    if (interface->connectionId != InvalidConnectionId) {
-        return interface->connectionId;
+sp_Connection Pool::connection(ConnectionId connectionId) {
+    auto it = connectionMap_.find(connectionId);
+    always_assert(it != connectionMap_.end());
+    return it->second;
+}
+
+void Pool::createHandle(PoolHandle * handle) {
+    transactionLifetimeManager_->notifyHandleCreated(handle);
+}
+
+void Pool::releaseHandle(PoolHandle * handle) {
+    transactionLifetimeManager_->notifyHandleReleased(handle);
+}
+
+ConnectionId Pool::assignConnectionId(PoolHandle * handle) {
+    ConnectionId connectionId = transactionLifetimeManager_->assignConnection(handle);
+    if (connectionId != InvalidConnectionId) {
+        return connectionId;
     }
 
     // todo: random, RR selection
-    unsigned connectionId;
     for (;;) {
         idleConnections_.blockingRead(connectionId);
         // Handle case where the connection ID is still in the idle queue,
@@ -342,25 +363,19 @@ unsigned Pool::assignConnectionId(PoolInterface * interface) {
 
 void Pool::tryExecuteNext() {
     QueueItem query;
-    /*
-     * First check the queries assigned to running transactions, as they use
-     * a dedicated connection and don't consume connections from the shared pool.
-     */
-    if (!boundQueue_.read(query)) {
-        if (idleConnections_.isEmpty()) {
-            return;
-        }
-
-        if (!queue_.read(query)) {
-            return;
-        }
+    if (idleConnections_.isEmpty()) {
+        return;
     }
 
-    auto connectionId = assignConnectionId(query.interface);
-    execute(connectionId, query.query, query.interface);
+    if (!queue_.read(query)) {
+        return;
+    }
+
+    auto connectionId = assignConnectionId(query.handle);
+    execute(connectionId, query.query, query.handle);
 }
 
-void Pool::execute(unsigned connectionId, QueryAwait * query, PoolInterface * interface) {
+void Pool::execute(ConnectionId connectionId, QueryAwait * query, PoolHandle * handle) {
     ENIG_DEBUG("Pool::execute");
 
     auto connection = connectionMap_[connectionId];
@@ -392,32 +407,28 @@ void Pool::execute(unsigned connectionId, QueryAwait * query, PoolInterface * in
                     Query::PrepareInit{}, plan->statementName, plan->planInfo.rewrittenCommand,
                     plan->planInfo.parameterCount));
             auto originalQuery = query->swapQuery(std::move(planQuery));
-            preparing_.insert(std::make_pair(connectionId, QueueItem{query, interface}));
+            preparing_.insert(std::make_pair(connectionId, QueueItem{query, handle}));
             pendingPrepare_.insert(std::make_pair(connectionId, std::move(originalQuery)));
         }
     } else {
         ENIG_DEBUG("Begin executing query");
     }
 
-    auto callback = [this, connectionId, interface] {
-        this->queryCompleted(connectionId, interface);
+    auto callback = [this, connectionId, handle] {
+        this->queryCompleted(connectionId, handle);
     };
     query->assign(connection);
     query->begin(callback);
 }
 
-void Pool::queryCompleted(unsigned connectionId, PoolInterface * interface) {
-    auto connection = connectionMap_[connectionId];
-    if (connection->inTransaction()) {
-        /*
-         * If a transaction is open, bind the connection to the pool making the query.
-         */
-        interface->connectionId = connectionId;
-        ENIG_DEBUG("Pool::queryCompleted: In transaction, not releasing connection to pool");
+void Pool::queryCompleted(ConnectionId connectionId, PoolHandle * handle) {
+    if (transactionLifetimeManager_->notifyFinishAssignment(handle, connectionId)) {
+        releaseConnection(connectionId);
     } else {
-        interface->connectionId = InvalidConnectionId;
-        idleConnections_.blockingWrite(connectionId);
-        ENIG_DEBUG("Pool::queryCompleted: Connection added to idle pool");
+        auto query = transactionLifetimeManager_->assignQuery(connectionId);
+        if (query) {
+            execute(connectionId, query, handle);
+        }
     }
 
     tryExecuteNext();
@@ -471,37 +482,44 @@ std::string PersistentPoolStorage::makeKey(Array const & connectionOpts) {
 }
 
 
-const StaticString s_PoolInterface("PoolInterface"),
-        s_PoolInterfaceNS("Enigma\\Pool"),
+TransactionState::TransactionState()
+    : pendingQueries(MaxPendingQueries)
+{}
+
+
+const StaticString s_PoolHandle("PoolHandle"),
+        s_PoolHandleNS("Enigma\\Pool"),
         s_QueryInterface("QueryInterface"),
         s_QueryInterfaceNS("Enigma\\Query");
 
-Object PoolInterface::newInstance(sp_Pool p) {
-    Object instance{Unit::lookupClass(s_PoolInterfaceNS.get())};
-    Native::data<PoolInterface>(instance)
+Object PoolHandle::newInstance(sp_Pool p) {
+    Object instance{Unit::lookupClass(s_PoolHandleNS.get())};
+    Native::data<PoolHandle>(instance)
             ->init(p);
     return instance;
 }
 
-PoolInterface::~PoolInterface() {
+PoolHandle::~PoolHandle() {
     sweep();
 }
 
-void PoolInterface::init(sp_Pool p) {
+void PoolHandle::init(sp_Pool p) {
     pool = p;
+    p->createHandle(this);
 }
 
-void PoolInterface::sweep() {
-    if (connectionId != Pool::InvalidConnectionId) {
-        pool->releaseConnection(connectionId);
+void PoolHandle::sweep() {
+    if (pool) {
+        pool->releaseHandle(this);
     }
 
+    always_assert(runningQueries == 0);
     pool.reset();
 }
 
 
-Object HHVM_METHOD(PoolInterface, query, Object const & queryObj) {
-    auto poolInterface = Native::data<PoolInterface>(this_);
+Object HHVM_METHOD(PoolHandle, query, Object const & queryObj) {
+    auto poolHandle = Native::data<PoolHandle>(this_);
 
     auto queryClass = Unit::lookupClass(s_QueryInterfaceNS.get());
     if (!queryObj.instanceof(queryClass)) {
@@ -516,7 +534,7 @@ Object HHVM_METHOD(PoolInterface, query, Object const & queryObj) {
         auto bindableParams = planInfo.mapParameters(queryData->params());
         auto query = new Query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
         query->setFlags(queryData->flags());
-        auto waitEvent = poolInterface->pool->enqueue(std::unique_ptr<Query>(query), poolInterface);
+        auto waitEvent = poolHandle->pool->enqueue(std::unique_ptr<Query>(query), poolHandle);
 
         return Object{waitEvent->getWaitHandle()};
     } catch (std::exception & e) {
@@ -560,8 +578,8 @@ void HHVM_METHOD(QueryInterface, setBinary, bool enabled) {
 
 
 void registerQueueClasses() {
-    ENIGMA_NAMED_ME(PoolInterface, Pool, query);
-    Native::registerNativeDataInfo<PoolInterface>(s_PoolInterface.get());
+    ENIGMA_NAMED_ME(PoolHandle, Pool, query);
+    Native::registerNativeDataInfo<PoolHandle>(s_PoolHandle.get());
 
     ENIGMA_NAMED_ME(QueryInterface, Query, __construct);
     ENIGMA_NAMED_ME(QueryInterface, Query, enablePlanCache);

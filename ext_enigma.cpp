@@ -18,16 +18,16 @@ namespace HPHP {
             persistent = poolOpts[s_Persistent].toBoolean();
         }
 
-        Object poolInterface;
+        Object poolHandle;
         if (persistent) {
             auto pool = s_pools.make(connectionOpts, poolOpts);
-            poolInterface = Enigma::PoolInterface::newInstance(pool);
+            poolHandle = Enigma::PoolHandle::newInstance(pool);
         } else {
             auto pool = std::make_shared<Enigma::Pool>(connectionOpts, poolOpts);
-            poolInterface = Enigma::PoolInterface::newInstance(pool);
+            poolHandle = Enigma::PoolHandle::newInstance(pool);
         }
 
-        return poolInterface;
+        return poolHandle;
     }
 
 
