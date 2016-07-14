@@ -211,12 +211,15 @@ std::tuple<std::string, std::vector<std::string> > PlanInfo::parseNamedParameter
     return std::make_tuple(rewritten.str(), std::move(params));
 }
 
+PlanCache::PlanCache(unsigned size)
+    : plans_(size)
+{}
 
 PlanCache::CachedPlan::CachedPlan(std::string const & cmd)
         : planInfo(cmd)
 {}
 
-PlanCache::CachedPlan const * PlanCache::lookupPlan(std::string const & query) const {
+PlanCache::CachedPlan const * PlanCache::lookupPlan(std::string const & query) {
     auto it = plans_.find(query);
     if (it != plans_.end()) {
         return it->second.get();
@@ -234,7 +237,7 @@ PlanCache::CachedPlan const * PlanCache::storePlan(std::string const & query, st
     auto plan = p_CachedPlan(new CachedPlan(query));
     auto planPtr = plan.get();
     plan->statementName = statementName;
-    plans_.insert(std::make_pair(query, std::move(plan)));
+    plans_.set(query, std::move(plan));
     return planPtr;
 }
 
@@ -246,7 +249,8 @@ AssignmentManager::~AssignmentManager() {}
 
 const StaticString
     s_PoolSize("pool_size"),
-    s_QueueSize("queue_size");
+    s_QueueSize("queue_size"),
+    s_PlanCacheSize("plan_cache_size");
 
 Pool::Pool(Array const & connectionOpts, Array const & poolOpts)
     : queue_(MaxQueueSize),
@@ -270,6 +274,15 @@ Pool::Pool(Array const & connectionOpts, Array const & poolOpts)
         maxQueueSize_ = size;
     }
 
+    if (poolOpts.exists(s_PlanCacheSize)) {
+        auto size = (unsigned)poolOpts[s_PlanCacheSize].toInt32();
+        if (size < 1 || size > PlanCache::MaxPlanCacheSize) {
+            throwEnigmaException("Invalid plan cache size specified");
+        }
+
+        planCacheSize_ = size;
+    }
+
     for (unsigned i = 0; i < poolSize_; i++) {
         addConnection(connectionOpts);
     }
@@ -282,7 +295,7 @@ void Pool::addConnection(Array const & options) {
     auto connection = std::make_shared<Connection>(options);
     auto connectionId = nextConnectionIndex_++;
     connectionMap_.insert(std::make_pair(connectionId, connection));
-    auto planCache = p_PlanCache(new PlanCache());
+    auto planCache = p_PlanCache(new PlanCache(planCacheSize_));
     planCaches_.insert(std::make_pair(connectionId, std::move(planCache)));
     idleConnections_.blockingWrite(connectionId);
     transactionLifetimeManager_->notifyConnectionAdded(connectionId);

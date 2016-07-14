@@ -4,6 +4,7 @@
 #include "hphp/runtime/ext/extension.h"
 #include <folly/MPMCQueue.h>
 #include <folly/ProducerConsumerQueue.h>
+#include <folly/EvictingCacheMap.h>
 #include "enigma-common.h"
 #include "enigma-query.h"
 
@@ -57,22 +58,22 @@ public:
     };
 
     typedef std::unique_ptr<CachedPlan> p_CachedPlan;
+    static const unsigned DefaultPlanCacheSize = 30;
+    static const unsigned MaxPlanCacheSize = 1000;
 
-    PlanCache() = default;
+    PlanCache(unsigned size = DefaultPlanCacheSize);
 
     PlanCache(PlanCache const &) = delete;
     PlanCache & operator = (PlanCache const &) = delete;
 
-    CachedPlan const * lookupPlan(std::string const & query) const;
+    CachedPlan const * lookupPlan(std::string const & query);
     CachedPlan const * assignPlan(std::string const & query);
 
 private:
     static constexpr char const * PlanNamePrefix = "EnigmaPlan_";
-    const unsigned DefaultPlanCacheSize = 30;
 
-    unsigned planCacheSize_{ DefaultPlanCacheSize };
     unsigned nextPlanId_{0};
-    std::unordered_map<std::string, p_CachedPlan> plans_;
+    folly::EvictingCacheMap<std::string, p_CachedPlan> plans_;
 
     CachedPlan const * storePlan(std::string const & query, std::string const & statementName);
     std::string generatePlanName();
@@ -145,6 +146,8 @@ private:
     unsigned maxQueueSize_{ DefaultQueueSize };
     // Number of connections we'll keep alive (even if they're idle)
     unsigned poolSize_{ DefaultPoolSize };
+    // Number of prepared statements to keep per connection
+    unsigned planCacheSize_{ PlanCache::DefaultPlanCacheSize };
     ConnectionId nextConnectionIndex_{ 0 };
     // Queries waiting for execution
     folly::MPMCQueue<QueueItem> queue_;
