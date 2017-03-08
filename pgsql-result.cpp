@@ -123,7 +123,7 @@ Oid ResultResource::columnTable(int column) const {
 /**
  * Returns a single field value of one row of the result. Row and column numbers start at 0.
  */
-String ResultResource::value(int row, int column) const {
+Variant ResultResource::value(int row, int column) const {
     if (PQgetisnull(result_, row, column) == 1) {
         return Variant(Variant::NullInit{});
     } else {

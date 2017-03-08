@@ -125,7 +125,7 @@ public:
     /**
      * Returns a single field value of one row of the result. Row and column numbers start at 0.
      */
-    String value(int row, int column) const;
+    Variant value(int row, int column) const;
 
     /**
      * Returns a single field value of one row of the result. Row and column numbers start at 0.

@@ -290,7 +290,7 @@ PG_BINARY_PARSER(Json)
 {
     if (flags & ResultResource::kNativeJson) {
         String json(value, (size_t) length, CopyStringMode{});
-        return f_json_decode(json);
+        return Variant::attach(f_json_decode(json));
     } else
         PG_PARSE_STRING;
 }
@@ -361,7 +361,7 @@ PG_TEXT_PARSER(Json)
 {
     if (flags & ResultResource::kNativeJson) {
         String json(value, (size_t) length, CopyStringMode{});
-        return f_json_decode(json);
+        return Variant::attach(f_json_decode(json));
     } else
         PG_PARSE_STRING
 }

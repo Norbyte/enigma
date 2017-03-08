@@ -1,3 +1,2 @@
-Fatal error: Uncaught exception 'Enigma\ErrorResult' with message 'FATAL:  password authentication failed for user "bad"
-FATAL:  password authentication failed for user "bad"
+Fatal error: Uncaught exception 'Enigma\ErrorResult' with message 'FATAL:  %S"bad"%S
 ' in %A

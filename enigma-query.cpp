@@ -1,6 +1,7 @@
 #include "enigma-query.h"
 #include "hphp/runtime/vm/native-data.h"
 #include "hphp/runtime/base/execution-context.h"
+#include "hphp/util/compatibility.h"
 
 namespace HPHP {
 namespace Enigma {
@@ -350,8 +351,7 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags, 
         for (auto row = 0; row < rows; row++) {
             Object rowObj{rowClass};
             if (constructBeforeBind && callCtor) {
-                TypedValue ret;
-                g_context->invokeFunc(&ret, ctor, args, rowObj.get());
+                g_context->invokeFunc(ctor, args, rowObj.get());
             }
 
             auto props = rowObj->propVec();
@@ -369,8 +369,7 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags, 
             }
 
             if (!constructBeforeBind && callCtor) {
-                TypedValue ret;
-                g_context->invokeFunc(&ret, ctor, args, rowObj.get());
+                g_context->invokeFunc(ctor, args, rowObj.get());
             }
 
             results.append(rowObj);
@@ -385,8 +384,7 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags, 
             // Construct a new row object and call the setter on each property
             Object rowObj{rowClass};
             if (constructBeforeBind && callCtor) {
-                TypedValue ret;
-                g_context->invokeFunc(&ret, ctor, args, rowObj.get());
+                g_context->invokeFunc(ctor, args, rowObj.get());
             }
 
             for (auto col = 0; col < cols; col++) {
@@ -394,8 +392,7 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags, 
             }
 
             if (!constructBeforeBind && callCtor) {
-                TypedValue ret;
-                g_context->invokeFunc(&ret, ctor, args, rowObj.get());
+                g_context->invokeFunc(ctor, args, rowObj.get());
             }
 
             results.append(rowObj);
