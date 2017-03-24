@@ -16,6 +16,7 @@ public:
 namespace Pgsql {
 
 class ResultResource;
+typedef std::unique_ptr<ResultResource> p_ResultResource;
 
 class PreparedParameters {
 public:
@@ -36,6 +37,10 @@ private:
     req::vector<const char *> params_;
 };
 
+enum class ConnectionInit {
+    InitAsync,
+    InitSync
+};
 
 class ConnectionResource {
 public:
@@ -60,7 +65,7 @@ public:
         Unknown        // reported if the connection is bad
     };
 
-    ConnectionResource(Array params);
+    ConnectionResource(Array params, ConnectionInit initType);
 
     ~ConnectionResource();
 
@@ -68,6 +73,11 @@ public:
      * Poll libpq so that it can proceed with the connection sequence.
      */
     PollingStatus pollConnection();
+
+    /**
+     * Reset the communication channel to the server.
+     */
+    void reset();
 
     /**
      * Reset the communication channel to the server, in a nonblocking manner.
@@ -113,6 +123,31 @@ public:
      * Returns the process ID (PID) of the backend process handling this connection.
      */
     int backendPid() const;
+
+    /**
+     * Submits a command to the server waits for the result.
+     */
+    p_ResultResource query(String const & command);
+
+    /**
+     * Submits a command to the server and waits for the result, with the ability to pass parameters separately from the SQL command text.
+     */
+    p_ResultResource queryParams(String const & command, PreparedParameters const & params, bool binary);
+
+    /**
+     * Submits a request to create a prepared statement with the given parameters, and waits for completion.
+     */
+    p_ResultResource prepare(String const & stmtName, String const & command, int numParams);
+
+    /**
+     * Sends a request to execute a prepared statement with given parameters, and waits for the result.
+     */
+    p_ResultResource queryPrepared(String const & stmtName, PreparedParameters const & params, bool binary);
+
+    /**
+     * Submits a request to obtain information about the specified prepared statement, and waits for completion.
+     */
+    p_ResultResource describePrepared(String const & stmtName);
 
     /**
      * Submits a command to the server without waiting for the result(s).
@@ -176,7 +211,7 @@ private:
     void arrayToStringList(Array const & values, req::vector<String> & strings, req::vector<const char *> & ptrs,
                            bool allowNulls = false);
 
-    void beginConnection(Array const & params);
+    void beginConnection(Array const & params, ConnectionInit initType);
 };
 
 }

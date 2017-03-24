@@ -74,6 +74,9 @@ public:
         return flags_;
     }
 
+    void send(Pgsql::ConnectionResource & connection);
+    Pgsql::p_ResultResource exec(Pgsql::ConnectionResource & connection);
+
 private:
     Type type_;
     String command_;
@@ -150,6 +153,7 @@ public:
 
     Connection(Array const & options);
 
+    void ensureConnected();
     void beginReset();
     void executeQuery(p_Query query, QueryCompletionCallback callback);
     void cancelQuery();
@@ -180,6 +184,10 @@ public:
         return lastError_;
     }
 
+    inline Pgsql::ConnectionResource & connection() const {
+        return *resource_.get();
+    }
+
 protected:
     friend struct QueryAwait;
 
@@ -197,6 +205,8 @@ private:
     std::string lastError_;
     StateChangeCallback stateChangeCallback_;
 
+    void connect();
+    void reset();
     void beginConnect();
     void beginQuery();
     void finishQuery(bool succeeded, std::unique_ptr<Pgsql::ResultResource> result);

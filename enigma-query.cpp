@@ -208,6 +208,55 @@ Query::Query(PreparedInit, String const & stmtName, Pgsql::PreparedParameters co
         : type_(Type::Prepared), statement_(stmtName), params_(params)
 {}
 
+void Query::send(Pgsql::ConnectionResource & connection) {
+    bool binary = (flags() & kBinary) == kBinary;
+    switch (type()) {
+        case Query::Type::Raw:
+            connection.sendQuery(command());
+            break;
+
+        case Query::Type::Parameterized:
+            if (params().count() == 0) {
+                connection.sendQuery(command());
+            } else {
+                connection.sendQueryParams(command(), params(), binary);
+            }
+
+            break;
+
+        case Query::Type::Prepare:
+            connection.sendPrepare(statement(), command(), numParams());
+            break;
+
+        case Query::Type::Prepared:
+            connection.sendQueryPrepared(statement(), params(), binary);
+            break;
+    }
+}
+
+Pgsql::p_ResultResource Query::exec(Pgsql::ConnectionResource & connection) {
+    bool binary = (flags() & kBinary) == kBinary;
+    switch (type()) {
+        case Query::Type::Raw:
+            return connection.query(command());
+
+        case Query::Type::Parameterized:
+            if (params().count() == 0) {
+                return connection.query(command());
+            } else {
+                return connection.queryParams(command(), params(), binary);
+            }
+
+        case Query::Type::Prepare:
+            return connection.prepare(statement(), command(), numParams());
+
+        case Query::Type::Prepared:
+            return connection.queryPrepared(statement(), params(), binary);
+
+        default:
+            throw std::runtime_error("Invalid query type");
+    }
+}
 
 
 const StaticString s_ErrorResult("ErrorResult"),
@@ -408,6 +457,34 @@ Connection::Connection(Array const & options)
         : options_(options)
 {}
 
+void Connection::ensureConnected() {
+    if (state_ == State::Dead) {
+        connect();
+    }
+}
+
+void Connection::connect() {
+    if (state_ != State::Dead) {
+        throw EnigmaException("Already connected");
+    }
+
+    if (!resource_) {
+        ENIG_DEBUG("Connection::connect()");
+        resource_ = std::unique_ptr<Pgsql::ConnectionResource>(
+                new Pgsql::ConnectionResource(options_, Pgsql::ConnectionInit::InitSync));
+    } else {
+        resource_->reset();
+    }
+
+    state_ = State::Idle;
+}
+
+void Connection::reset() {
+    ENIG_DEBUG("Connection::reset()");
+    resource_->reset();
+    state_ = State::Idle;
+}
+
 void Connection::beginConnect() {
     if (state_ != State::Dead) {
         throw EnigmaException("Already connected");
@@ -417,7 +494,7 @@ void Connection::beginConnect() {
     if (!resource_) {
         ENIG_DEBUG("Connection::beginConnect()");
         resource_ = std::unique_ptr<Pgsql::ConnectionResource>(
-                new Pgsql::ConnectionResource(options_));
+                new Pgsql::ConnectionResource(options_, Pgsql::ConnectionInit::InitAsync));
         state_ = State::Connecting;
     } else {
         resource_->resetStart();
@@ -472,24 +549,7 @@ void Connection::setStateChangeCallback(StateChangeCallback callback) {
 
 void Connection::beginQuery() {
     ENIG_DEBUG("Connection::beginQuery()");
-    bool binary = (nextQuery_->flags() & Query::kBinary) == Query::kBinary;
-    switch (nextQuery_->type()) {
-        case Query::Type::Raw:
-            resource_->sendQuery(nextQuery_->command());
-            break;
-
-        case Query::Type::Parameterized:
-            resource_->sendQueryParams(nextQuery_->command(), nextQuery_->params(), binary);
-            break;
-
-        case Query::Type::Prepare:
-            resource_->sendPrepare(nextQuery_->statement(), nextQuery_->command(), nextQuery_->numParams());
-            break;
-
-        case Query::Type::Prepared:
-            resource_->sendQueryPrepared(nextQuery_->statement(), nextQuery_->params(), binary);
-            break;
-    }
+    nextQuery_->send(*resource_.get());
 
     lastError_.clear();
     writing_ = true;

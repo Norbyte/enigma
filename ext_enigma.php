@@ -26,6 +26,9 @@ class Pool {
 
     <<__Native>>
     function query(Query $query) : Awaitable<QueryResult>;
+
+    <<__Native>>
+    function syncQuery(Query $query) : QueryResult;
 }
 
 

@@ -563,6 +563,39 @@ Object HHVM_METHOD(PoolHandle, query, Object const & queryObj) {
 }
 
 
+Object HHVM_METHOD(PoolHandle, syncQuery, Object const & queryObj) {
+    auto poolHandle = Native::data<PoolHandle>(this_);
+    if (!poolHandle->pool) {
+        throwEnigmaException(
+                "Pool::syncQuery(): Cannot execute a query after the pool handle was released");
+    }
+
+    auto queryClass = Unit::lookupClass(s_QueryInterfaceNS.get());
+    if (!queryObj.instanceof(queryClass)) {
+        SystemLib::throwInvalidArgumentExceptionObject(
+                "Pool::syncQuery() expects a Query object as its parameter");
+    }
+
+    auto queryData = Native::data<QueryInterface>(queryObj);
+
+    try {
+        PlanInfo planInfo(queryData->command().c_str());
+        auto bindableParams = planInfo.mapParameters(queryData->params());
+        auto query = new Query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
+        query->setFlags(queryData->flags());
+        auto connectionId = poolHandle->pool->assignConnectionId(poolHandle);
+        auto connection = poolHandle->pool->connection(connectionId);
+        connection->ensureConnected();
+        auto result = query->exec(connection->connection());
+        poolHandle->pool->releaseConnection(connectionId);
+        return Object{QueryResult::newInstance(std::move(result))};
+    } catch (std::exception & e) {
+        // TODO: release connection ID on exception! --> ConnectionHandle?
+        throwEnigmaException(e.what());
+    }
+}
+
+
 void HHVM_METHOD(PoolHandle, release) {
     auto poolHandle = Native::data<PoolHandle>(this_);
     if (!poolHandle->pool) {
@@ -610,6 +643,7 @@ void HHVM_METHOD(QueryInterface, setBinary, bool enabled) {
 
 void registerQueueClasses() {
     ENIGMA_NAMED_ME(PoolHandle, Pool, query);
+    ENIGMA_NAMED_ME(PoolHandle, Pool, syncQuery);
     ENIGMA_NAMED_ME(PoolHandle, Pool, release);
     Native::registerNativeDataInfo<PoolHandle>(s_PoolHandle.get());
 

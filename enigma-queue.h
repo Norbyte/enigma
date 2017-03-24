@@ -131,6 +131,7 @@ public:
     void enqueue(QueryAwait * query, PoolHandle * handle);
     void execute(ConnectionId connectionId, QueryAwait * query, PoolHandle * handle);
 
+    ConnectionId assignConnectionId(PoolHandle * handle);
     void releaseConnection(ConnectionId connectionId);
     sp_Connection connection(ConnectionId connectionId);
 
@@ -161,7 +162,6 @@ private:
     p_AssignmentManager transactionLifetimeManager_;
     // TODO: p_AssignmentManager assignmentManager_;
 
-    ConnectionId assignConnectionId(PoolHandle * handle);
     void addConnection(Array const & options);
     void removeConnection(ConnectionId connectionId);
     void tryExecuteNext();

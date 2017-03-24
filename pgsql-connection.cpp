@@ -44,8 +44,8 @@ PreparedParameters::PreparedParameters(Array const & params)
 }
 
 
-ConnectionResource::ConnectionResource(Array params) {
-    beginConnection(params);
+ConnectionResource::ConnectionResource(Array params, ConnectionInit initType) {
+    beginConnection(params, initType);
 }
 
 ConnectionResource::~ConnectionResource() {
@@ -66,6 +66,14 @@ ConnectionResource::PollingStatus ConnectionResource::pollConnection() {
         default:
             throw EnigmaException("Unknown value returned from PQconnectPoll()");
     }
+}
+
+/**
+ * Reset the communication channel to the server.
+ */
+void ConnectionResource::reset() {
+    ENIG_DEBUG("PQreset()");
+    PQreset(connection_);
 }
 
 /**
@@ -165,6 +173,71 @@ int ConnectionResource::socket() const {
  */
 int ConnectionResource::backendPid() const {
     return PQbackendPID(connection_);
+}
+
+/**
+ * Submits a command to the server waits for the result.
+ */
+p_ResultResource ConnectionResource::query(String const & command) {
+    ENIG_DEBUG("PQexec()");
+    auto result = PQexec(connection_, command.c_str());
+    if (result == nullptr) {
+        throw EnigmaException(std::string("Failed to execute query: ") + errorMessage());
+    }
+
+    return p_ResultResource(new ResultResource(result));
+}
+
+/**
+ * Submits a command to the server and waits for the result, with the ability to pass parameters separately from the SQL command text.
+ */
+p_ResultResource ConnectionResource::queryParams(String const & command, PreparedParameters const & params, bool binary) {
+    ENIG_DEBUG("PQsendQueryParams()");
+    auto result = PQexecParams(connection_, command.c_str(), params.count(), nullptr, params.buffer(), nullptr, nullptr, binary ? 1 : 0);
+    if (result == nullptr) {
+        throw EnigmaException(std::string("Failed to execute query: ") + errorMessage());
+    }
+
+    return p_ResultResource(new ResultResource(result));
+}
+
+/**
+ * Submits a request to create a prepared statement with the given parameters, and waits for completion.
+ */
+p_ResultResource ConnectionResource::prepare(String const & stmtName, String const & command, int numParams) {
+    ENIG_DEBUG("PQsendPrepare()");
+    auto result = PQprepare(connection_, stmtName.c_str(), command.c_str(), numParams, nullptr);
+    if (result == nullptr) {
+        throw EnigmaException(std::string("Failed to prepare statement: ") + errorMessage());
+    }
+
+    return p_ResultResource(new ResultResource(result));
+}
+
+/**
+ * Sends a request to execute a prepared statement with given parameters, and waits for the result.
+ */
+p_ResultResource ConnectionResource::queryPrepared(String const & stmtName, PreparedParameters const & params, bool binary) {
+    ENIG_DEBUG("PQsendQueryPrepared()");
+    auto result = PQexecPrepared(connection_, stmtName.c_str(), params.count(), params.buffer(), nullptr, nullptr, binary ? 1 : 0);
+    if (result == nullptr) {
+        throw EnigmaException(std::string("Failed to execute prepared query: ") + errorMessage());
+    }
+
+    return p_ResultResource(new ResultResource(result));
+}
+
+/**
+ * Submits a request to obtain information about the specified prepared statement, and waits for completion.
+ */
+p_ResultResource ConnectionResource::describePrepared(String const & stmtName) {
+    ENIG_DEBUG("PQsendDescribePrepared()");
+    auto result = PQdescribePrepared(connection_, stmtName.c_str());
+    if (result == nullptr) {
+        throw EnigmaException(std::string("Failed to describe prepared statement: ") + errorMessage());
+    }
+
+    return p_ResultResource(new ResultResource(result));
 }
 
 /**
@@ -309,7 +382,7 @@ void ConnectionResource::arrayToStringList(Array const & values, req::vector<Str
     }
 }
 
-void ConnectionResource::beginConnection(Array const & params) {
+void ConnectionResource::beginConnection(Array const & params, ConnectionInit initType) {
     ssize_t n_params = params.length();
     req::vector<String> keys(n_params), values(n_params);
     req::vector<const char *> pg_keys(n_params + 1), pg_values(n_params + 1);
@@ -327,7 +400,12 @@ void ConnectionResource::beginConnection(Array const & params) {
     pg_values[i] = nullptr;
 
     ENIG_DEBUG("PQconnectStartParams()");
-    connection_ = PQconnectStartParams(pg_keys.data(), pg_values.data(), 0);
+    if (initType == ConnectionInit::InitAsync) {
+        connection_ = PQconnectStartParams(pg_keys.data(), pg_values.data(), 0);
+    } else {
+        connection_ = PQconnectdbParams(pg_keys.data(), pg_values.data(), 0);
+    }
+
     if (connection_ == nullptr) {
         throw EnigmaException("Failed to initialize pgsql connection");
     }
