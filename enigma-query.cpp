@@ -241,7 +241,7 @@ Pgsql::p_ResultResource Query::exec(Pgsql::ConnectionResource & connection) {
             return connection.query(command());
 
         case Query::Type::Parameterized:
-            if (params().count() == 0) {
+            if (params().count() == 0 && !binary) {
                 return connection.query(command());
             } else {
                 return connection.queryParams(command(), params(), binary);
