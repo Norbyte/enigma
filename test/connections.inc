@@ -1,6 +1,10 @@
 <?php
 
 $opts = [
+    'host' => '127.0.0.1',
+    'user' => 'ndo',
+    'password' => 'ndo',
+    'dbname' => 'ndo',
     'sslmode' => 'disable'
 ];
 $poolOpts = ['pool_size' => 1];

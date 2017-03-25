@@ -117,7 +117,9 @@ function testQuery($text, $query, array $args = [], array $opts = [])
             $baseTime = $timers[$base] * 1000;
             $ratio = round((1 - ($time / $baseTime)) * 100, 1);
             $color = $ratio > 0 ? "\x1b[32m" : "\x1b[31m";
+            echo sprintf("%-5d (%s%6.1f%%\x1b[0m)  ", $time, $color, $ratio);
         } else {
+            echo sprintf("%-5d    ", $time);
         }
     }
 
