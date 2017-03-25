@@ -5,6 +5,7 @@
 #include "hphp/runtime/ext/asio/socket-event.h"
 #include "hphp/runtime/ext/asio/asio-external-thread-event.h"
 #include "enigma-common.h"
+#include "enigma-plan.h"
 #include "pgsql-connection.h"
 #include "pgsql-result.h"
 
@@ -151,7 +152,7 @@ public:
     typedef std::function<void(bool, Pgsql::ResultResource *, std::string)> QueryCompletionCallback;
     typedef std::function<void(Connection &, State)> StateChangeCallback;
 
-    Connection(Array const & options);
+    Connection(Array const & options, unsigned planCacheSize);
 
     void ensureConnected();
     void beginReset();
@@ -188,6 +189,10 @@ public:
         return *resource_.get();
     }
 
+    inline PlanCache & planCache() {
+        return planCache_;
+    }
+
 protected:
     friend struct QueryAwait;
 
@@ -201,6 +206,7 @@ private:
 
     bool hasQueuedQuery_ { false };
     p_Query nextQuery_;
+    PlanCache planCache_;
     QueryCompletionCallback queryCallback_;
     std::string lastError_;
     StateChangeCallback stateChangeCallback_;

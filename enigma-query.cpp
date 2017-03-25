@@ -323,15 +323,12 @@ Array HHVM_METHOD(QueryResult, fetchArrays, int64_t flags) {
     bool numbered = (bool)(flags & QueryResult::kNumbered);
     for (auto row = 0; row < rows; row++) {
         Array rowArr{Array::Create()};
-        if (numbered)
-        {
+        if (numbered) {
             // Fetch arrays with 0, 1, ..., n as keys
             for (auto col = 0; col < cols; col++) {
                 rowArr.set(col, resource.typedValue(row, col, colTypes[col], valueFlags));
             }
-        }
-        else
-        {
+        } else {
             // Fetch arrays with column names as keys
             for (auto col = 0; col < cols; col++) {
                 rowArr.set(colNames[col], resource.typedValue(row, col, colTypes[col], valueFlags));
@@ -453,8 +450,8 @@ Array HHVM_METHOD(QueryResult, fetchObjects, String const & cls, int64_t flags, 
 
 
 
-Connection::Connection(Array const & options)
-        : options_(options)
+Connection::Connection(Array const & options, unsigned planCacheSize)
+        : options_(options), planCache_(planCacheSize)
 {}
 
 void Connection::ensureConnected() {
@@ -468,6 +465,7 @@ void Connection::connect() {
         throw EnigmaException("Already connected");
     }
 
+    planCache_.clear();
     if (!resource_) {
         ENIG_DEBUG("Connection::connect()");
         resource_ = std::unique_ptr<Pgsql::ConnectionResource>(
@@ -481,6 +479,7 @@ void Connection::connect() {
 
 void Connection::reset() {
     ENIG_DEBUG("Connection::reset()");
+    planCache_.clear();
     resource_->reset();
     state_ = State::Idle;
 }
@@ -490,6 +489,7 @@ void Connection::beginConnect() {
         throw EnigmaException("Already connected");
     }
 
+    planCache_.clear();
     writing_ = true;
     if (!resource_) {
         ENIG_DEBUG("Connection::beginConnect()");
@@ -504,6 +504,7 @@ void Connection::beginConnect() {
 
 void Connection::beginReset() {
     writing_ = true;
+    planCache_.clear();
     ENIG_DEBUG("Connection::beginReset()");
     resource_->resetStart();
     state_ = State::Resetting;

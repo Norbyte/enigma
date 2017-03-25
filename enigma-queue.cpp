@@ -7,272 +7,6 @@ namespace HPHP {
 namespace Enigma {
 
 
-PlanInfo::PlanInfo(std::string const & cmd)
-        : command(cmd) {
-    determineParameterType();
-}
-
-Array PlanInfo::mapParameters(Array const & params) {
-    if (type == ParameterType::Named) {
-        return mapNamedParameters(params);
-    } else {
-        return mapNumberedParameters(params);
-    }
-}
-
-Array PlanInfo::mapNamedParameters(Array const & params) {
-    if (parameterNameMap.size() != params.size()) {
-        throw Exception(std::string("Parameter count mismatch; expected ") + std::to_string(parameterNameMap.size())
-            + " named parameters, got " + std::to_string(params.size()));
-    }
-
-    Array mapped{Array::Create()};
-    for (unsigned i = 0; i < parameterNameMap.size(); i++) {
-        auto key = String(parameterNameMap[i]);
-        auto value = params->nvGet(key.get());
-        if (value == nullptr) {
-            throw EnigmaException(std::string("Missing bound parameter: ") + key.c_str());
-        }
-
-        mapped.append(*reinterpret_cast<Variant const *>(value));
-    }
-
-    return mapped;
-}
-
-Array PlanInfo::mapNumberedParameters(Array const & params) {
-    if (parameterCount != params.size()) {
-        throw Exception(std::string("Parameter count mismatch; expected ") + std::to_string(parameterCount)
-            + " parameters, got " + std::to_string(params.size()));
-    }
-
-    Array mapped{Array::attach(PackedArray::MakeReserve(parameterCount))};
-    for (unsigned i = 0; i < parameterCount; i++) {
-        auto value = params->nvGet(i);
-        if (value == nullptr) {
-            throw Exception(std::string("Missing bound parameter: ") + std::to_string(i));
-        }
-
-        mapped.append(*reinterpret_cast<Variant const *>(value));
-    }
-
-    return mapped;
-}
-
-void PlanInfo::determineParameterType() {
-    auto numbered = parseNumberedParameters();
-    auto named = parseNamedParameters();
-
-    if (std::get<1>(named).size() > 0 && std::get<1>(numbered) > 0) {
-        throw Exception("Query contains both named and numbered parameters");
-    }
-
-    if (std::get<1>(named).size() > 0) {
-        type = ParameterType::Named;
-        rewrittenCommand = std::move(std::get<0>(named));
-        parameterNameMap = std::move(std::get<1>(named));
-    } else {
-        type = ParameterType::Numbered;
-        rewrittenCommand = std::move(std::get<0>(numbered));
-        parameterCount = std::get<1>(numbered);
-    }
-}
-
-inline bool is_space(char c) {
-    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-}
-
-inline bool is_alnum(char c) {
-    return (c >= '0' && c <= '9')
-        || (c >= 'a' && c <= 'z')
-        || (c >= 'A' && c <= 'Z');
-}
-
-inline bool is_placeholder_char(char c) {
-    return is_alnum(c) || c == '_';
-}
-
-inline bool PlanInfo::isValidPlaceholder(std::size_t pos) const {
-    // Check if the preceding byte is in [0-9a-zA-Z (\r\n\t]
-    if (pos != 0) {
-        char prev = command[pos - 1];
-        if (
-               !is_space(prev)
-               && !is_alnum(prev)
-               && prev != '('
-               && prev != ']'
-               && prev != ','
-            ) {
-            return false;
-        }
-    }
-
-    // Check if the following byte is in [0-9a-zA-Z:) \r\n\t]
-    // Allow ":", as parameter typecasting is fairly common
-    if (pos < command.length() - 1) {
-        char next = command[pos + 1];
-        if (
-                !is_space(next)
-                && !is_alnum(next)
-                && next != ':'
-                && next != ')'
-                && next != ']'
-                && next != ','
-                ) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-inline bool PlanInfo::isValidNamedPlaceholder(std::size_t pos) const {
-    // Check if the preceding byte is in [ \r\n\t]
-    if (pos != 0) {
-        char prev = command[pos - 1];
-        if (
-                !is_space(prev)
-                && prev != '('
-                && prev != '['
-                && prev != ','
-                ) {
-            return false;
-        }
-    }
-
-    // Check if the following byte is in [0-9a-zA-Z_]
-    if (
-            pos < command.length() - 1
-            && !is_placeholder_char(command[pos + 1])
-            ) {
-        return false;
-    }
-
-    return true;
-}
-
-inline std::size_t PlanInfo::namedPlaceholderLength(std::size_t pos) const {
-    if (!isValidNamedPlaceholder(pos)) {
-        return 0;
-    }
-
-    auto i = pos + 1;
-    for (; i < command.length() && (is_alnum(command[i]) || command[i] == '_'); i++);
-
-    return i - pos - 1;
-}
-
-std::tuple<std::string, unsigned> __attribute__ ((noinline)) PlanInfo::parseNumberedParameters() const {
-    unsigned numParams{0};
-    std::string rewritten;
-    rewritten.reserve(command.size() + (command.size() >> 1));
-
-    // Check if the placeholder is valid
-    // (should only be preceded and followed by [0-9a-z] and whitespace)
-    std::size_t pos{0}, lastWrittenPos{0};
-    for (;;) {
-        pos = command.find('?', pos);
-        if (pos == std::string::npos) {
-            break;
-        }
-
-        rewritten.append(command.data() + lastWrittenPos, pos - lastWrittenPos);
-        lastWrittenPos = pos + 1;
-
-        if (isValidPlaceholder(pos++)) {
-            char paramNo[21];
-            paramNo[0] = '\0';
-            auto paramNoStr = conv_10(++numParams, &paramNo[20]);
-            rewritten.append(paramNoStr.start(), paramNoStr.size());
-        } else {
-            rewritten.push_back('?');
-        }
-    }
-
-    rewritten.append(command.data() + lastWrittenPos, command.length() - lastWrittenPos);
-    return std::make_tuple(rewritten, numParams);
-}
-
-std::tuple<std::string, std::vector<std::string> > PlanInfo::parseNamedParameters() const {
-    std::vector<std::string> params;
-    std::unordered_map<std::string, unsigned> paramMap;
-    std::string rewritten;
-    rewritten.reserve(command.size() + (command.size() >> 1));
-
-    std::size_t pos{0}, lastWrittenPos{0};
-    for (;;) {
-        pos = command.find(':', pos);
-        if (pos == std::string::npos) {
-            break;
-        }
-
-        rewritten.append(command.data() + lastWrittenPos, pos - lastWrittenPos);
-        lastWrittenPos = pos + 1;
-
-        auto placeholderLength = namedPlaceholderLength(pos++);
-        if (placeholderLength > 0) {
-            std::string param = command.substr(pos, placeholderLength);
-            auto paramIt = paramMap.find(param);
-            if (paramIt != paramMap.end()) {
-                char paramNo[21];
-                paramNo[0] = '\0';
-                auto paramNoStr = conv_10(paramIt->second, &paramNo[20]);
-                rewritten.append(paramNoStr.start(), paramNoStr.size());
-            } else {
-                params.push_back(param);
-                paramMap.insert(std::make_pair(param, params.size()));
-
-                char paramNo[21];
-                paramNo[0] = '\0';
-                auto paramNoStr = conv_10(params.size(), &paramNo[20]);
-                rewritten.append(paramNoStr.start(), paramNoStr.size());
-            }
-
-            pos += placeholderLength;
-            lastWrittenPos += placeholderLength;
-        } else {
-            rewritten.push_back(':');
-        }
-    }
-
-    rewritten.append(command.data() + lastWrittenPos, command.length() - lastWrittenPos);
-    return std::make_tuple(rewritten, std::move(params));
-}
-
-PlanCache::PlanCache(unsigned size)
-    : plans_(size)
-{}
-
-PlanCache::CachedPlan::CachedPlan(std::string const & cmd)
-        : planInfo(cmd)
-{}
-
-PlanCache::CachedPlan const * PlanCache::lookupPlan(std::string const & query) {
-    auto it = plans_.find(query);
-    if (it != plans_.end()) {
-        return it->second.get();
-    } else {
-        return nullptr;
-    }
-}
-
-PlanCache::CachedPlan const * PlanCache::assignPlan(std::string const & query) {
-    auto name = generatePlanName();
-    return storePlan(query, name);
-}
-
-PlanCache::CachedPlan const * PlanCache::storePlan(std::string const & query, std::string const & statementName) {
-    auto plan = p_CachedPlan(new CachedPlan(query));
-    auto planPtr = plan.get();
-    plan->statementName = statementName;
-    plans_.set(query, std::move(plan));
-    return planPtr;
-}
-
-std::string PlanCache::generatePlanName() {
-    return PlanNamePrefix + std::to_string(nextPlanId_++);
-}
-
 AssignmentManager::~AssignmentManager() {}
 
 const StaticString
@@ -320,11 +54,9 @@ Pool::~Pool() {
 }
 
 void Pool::addConnection(Array const & options) {
-    auto connection = std::make_shared<Connection>(options);
+    auto connection = std::make_shared<Connection>(options, planCacheSize_);
     auto connectionId = nextConnectionIndex_++;
     connectionMap_.insert(std::make_pair(connectionId, connection));
-    auto planCache = p_PlanCache(new PlanCache(planCacheSize_));
-    planCaches_.insert(std::make_pair(connectionId, std::move(planCache)));
     idleConnections_.blockingWrite(connectionId);
     transactionLifetimeManager_->notifyConnectionAdded(connectionId);
 }
@@ -341,7 +73,6 @@ void Pool::removeConnection(ConnectionId connectionId) {
         pendingPrepare_.erase(pendingPrepareIt);
     }
 
-    planCaches_.erase(connectionId);
     connectionMap_.erase(connectionId);
 }
 
@@ -429,7 +160,7 @@ void Pool::execute(ConnectionId connectionId, QueryAwait * query, PoolHandle * h
      * and if planning has already taken place for this query.
      */
     if (q.flags() & Query::kCachePlan && q.type() == Query::Type::Parameterized) {
-        auto plan = planCaches_[connectionId]->lookupPlan(q.command().c_str());
+        auto plan = connection->planCache().lookupPlan(q.command().c_str());
         if (plan) {
             /*
              * Query was already prepared on this connection, use the
@@ -445,7 +176,7 @@ void Pool::execute(ConnectionId connectionId, QueryAwait * query, PoolHandle * h
              * for later execution.
              */
             ENIG_DEBUG("Begin preparing");
-            plan = planCaches_[connectionId]->assignPlan(q.command().c_str());
+            plan = connection->planCache().assignPlan(q.command().c_str());
             p_Query planQuery(new Query(
                     Query::PrepareInit{}, plan->statementName, plan->planInfo.rewrittenCommand,
                     plan->planInfo.parameterCount));
@@ -607,14 +338,38 @@ Object HHVM_METHOD(PoolHandle, syncQuery, Object const & queryObj) {
     auto queryData = Native::data<QueryInterface>(queryObj);
 
     try {
-        PlanInfo planInfo(queryData->command().c_str());
-        auto bindableParams = planInfo.mapParameters(queryData->params());
-        Query query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
-        query.setFlags(queryData->flags());
+        std::string sql = queryData->command().c_str();
         auto connectionId = poolHandle->pool->assignConnectionId(poolHandle);
         auto connection = poolHandle->pool->connection(connectionId);
         connection->ensureConnected();
-        auto result = query.exec(connection->connection());
+
+        Pgsql::p_ResultResource result;
+        if (queryData->flags() & Query::kCachePlan) {
+            auto plan = connection->planCache().lookupPlan(sql);
+            if (plan == nullptr) {
+                plan = connection->planCache().assignPlan(sql);
+                if (plan != nullptr) {
+                    Query query(Query::PrepareInit{}, plan->statementName, plan->planInfo.rewrittenCommand,
+                            plan->planInfo.parameterCount);
+                    query.exec(connection->connection());
+                }
+            }
+
+            if (plan != nullptr) {
+                auto bindableParams = plan->planInfo.mapParameters(queryData->params());
+                Query query(Query::PreparedInit{}, plan->statementName, bindableParams);
+                query.setFlags(queryData->flags());
+                result = query.exec(connection->connection());
+            }
+        }
+
+        if (!result) {
+            PlanInfo planInfo(sql);
+            auto bindableParams = planInfo.mapParameters(queryData->params());
+            Query query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
+            query.setFlags(queryData->flags());
+            result = query.exec(connection->connection());
+        };
         poolHandle->pool->releaseConnection(connectionId);
         return Object{QueryResult::newInstance(std::move(result))};
     } catch (std::exception & e) {
