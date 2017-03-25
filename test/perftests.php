@@ -1,5 +1,8 @@
 <?php
 
+set_time_limit(0);
+echo 'PID: ' . getmypid() . PHP_EOL;
+
 $pdo = new PDO(
     'pgsql:host=127.0.0.1 user=ndo password=ndo dbname=ndo sslmode=disable',
     '', '', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
@@ -34,13 +37,17 @@ function pdoQuery($query, $args, $object, $class, $stmt)
     }
 }
 
-function enigmaQuery($query, $args, $object, $class, $flags, $queryFlags)
+function enigmaQuery($query, $args, $object, $class, $flags, $queryFlags, $async)
 {
     global $enigma;
     $realQuery = new Enigma\Query($query, $args);
     if ($queryFlags & Enigma\Query::CACHE_PLAN) $realQuery->enablePlanCache(true);
     if ($queryFlags & Enigma\Query::BINARY) $realQuery->setBinary(true);
-    $response = \HH\Asio\join($enigma->query($realQuery));
+    if ($async) {
+        $response = \HH\Asio\join($enigma->query($realQuery));
+    } else {
+        $response = $enigma->syncQuery($realQuery);
+    }
 
     if ($object) {
         return $response->fetchObjects($class ?? '\stdClass', $flags);
@@ -49,7 +56,7 @@ function enigmaQuery($query, $args, $object, $class, $flags, $queryFlags)
     }
 }
 
-function testQuery($text, $query, $args = [], $object = false, $class = null, $flags = 0, $queryFlags = 0, $prepare = false)
+function testQuery($text, $query, $args = [], $object = false, $class = null, $flags = 0, $queryFlags = 0, $prepare = false, $async = false)
 {
     if ($prepare) {
         global $pdo;
@@ -72,13 +79,13 @@ function testQuery($text, $query, $args = [], $object = false, $class = null, $f
 
     // Warmup
     for ($i = 0; $i < 3; $i++) {
-        enigmaQuery($query, $args, $object, $class, $flags, $queryFlags);
+        enigmaQuery($query, $args, $object, $class, $flags, $queryFlags, $async);
     }
 
     // Benchmark
     $enigmaStart = microtime(true);
     for ($i = 0; $i < 1000; $i++) {
-        enigmaQuery($query, $args, $object, $class, $flags, $queryFlags);
+        enigmaQuery($query, $args, $object, $class, $flags, $queryFlags, $async);
     }
     $enigmaEnd = microtime(true);
 
@@ -119,6 +126,12 @@ testQuery('Many num params/Many cols/Many rows',
     from generate_series(1, 300)',
     [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 );
+testQuery('Many named params/Few cols/Few rows',
+    'select :a::integer + :b + :c + :d + :e + :f + :g + :h + :i + :j +
+            :k + :l + :m + :n + :o + :p + :q + :r + :s + :t as a
+     from generate_series(1, 10)',
+    ['a' => 1, 'b' => 2, 'c' => 3, 'd' => 4, 'e' => 5, 'f' => 5, 'g' => 5, 'h' => 5, 'i' => 5, 'j' => 5,
+     'k' => 1, 'l' => 2, 'm' => 3, 'n' => 4, 'o' => 5, 'p' => 5, 'q' => 5, 'r' => 5, 's' => 5, 't' => 5]);
 testQuery('Huge num params/No cols/No rows',
     'with t as (select ' . str_repeat('? ::integer, ', 1000) . '1) select 1',
     array_fill(0, 1000, 1)
@@ -133,6 +146,10 @@ testQuery('Integer / text',
 );
 testQuery('Long integer / text',
     'select 1111111 as a, 2222222 as b, 3333333 as c, 4444444 as d, 5555555 as e from generate_series(1, 1000)',
+    []
+);
+testQuery('Float (textoid) / text',
+    'select 11111.1::text as a, 22222.2::text as b, 33333.3::text as c, 44444.4::text as d, 55555.5::text as e from generate_series(1, 200)',
     []
 );
 testQuery('Float / text',

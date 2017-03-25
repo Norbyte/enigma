@@ -1,3 +1,4 @@
+#include <hphp/util/conv-10.h>
 #include "enigma-queue.h"
 #include "enigma-transaction.h"
 #include "hphp/runtime/vm/native-data.h"
@@ -45,7 +46,7 @@ Array PlanInfo::mapNumberedParameters(Array const & params) {
             + " parameters, got " + std::to_string(params.size()));
     }
 
-    Array mapped{Array::Create()};
+    Array mapped{Array::attach(PackedArray::MakeReserve(parameterCount))};
     for (unsigned i = 0; i < parameterCount; i++) {
         auto value = params->nvGet(i);
         if (value == nullptr) {
@@ -77,53 +78,72 @@ void PlanInfo::determineParameterType() {
     }
 }
 
-bool PlanInfo::isValidPlaceholder(std::size_t pos) const {
+inline bool is_space(char c) {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+inline bool is_alnum(char c) {
+    return (c >= '0' && c <= '9')
+        || (c >= 'a' && c <= 'z')
+        || (c >= 'A' && c <= 'Z');
+}
+
+inline bool is_placeholder_char(char c) {
+    return is_alnum(c) || c == '_';
+}
+
+inline bool PlanInfo::isValidPlaceholder(std::size_t pos) const {
     // Check if the preceding byte is in [0-9a-zA-Z (\r\n\t]
-    if (
-            pos != 0
-            && !isspace(command[pos - 1])
-            && !isalnum(command[pos - 1])
-            && command[pos - 1] != '('
-            && command[pos - 1] != ']'
-            && command[pos - 1] != ','
+    if (pos != 0) {
+        char prev = command[pos - 1];
+        if (
+               !is_space(prev)
+               && !is_alnum(prev)
+               && prev != '('
+               && prev != ']'
+               && prev != ','
             ) {
-        return false;
+            return false;
+        }
     }
 
     // Check if the following byte is in [0-9a-zA-Z:) \r\n\t]
     // Allow ":", as parameter typecasting is fairly common
-    if (
-            pos < command.length() - 1
-            && !isspace(command[pos + 1])
-            && !isalnum(command[pos + 1])
-            && command[pos + 1] != ':'
-            && command[pos + 1] != ')'
-            && command[pos + 1] != ']'
-            && command[pos + 1] != ','
-            ) {
-        return false;
+    if (pos < command.length() - 1) {
+        char next = command[pos + 1];
+        if (
+                !is_space(next)
+                && !is_alnum(next)
+                && next != ':'
+                && next != ')'
+                && next != ']'
+                && next != ','
+                ) {
+            return false;
+        }
     }
 
     return true;
 }
 
-bool PlanInfo::isValidNamedPlaceholder(std::size_t pos) const {
+inline bool PlanInfo::isValidNamedPlaceholder(std::size_t pos) const {
     // Check if the preceding byte is in [ \r\n\t]
-    if (
-            pos != 0
-            && !isspace(command[pos - 1])
-            && command[pos - 1] != '('
-            && command[pos - 1] != '['
-            && command[pos - 1] != ','
-            ) {
-        return false;
+    if (pos != 0) {
+        char prev = command[pos - 1];
+        if (
+                !is_space(prev)
+                && prev != '('
+                && prev != '['
+                && prev != ','
+                ) {
+            return false;
+        }
     }
 
     // Check if the following byte is in [0-9a-zA-Z_]
     if (
             pos < command.length() - 1
-            && !isalnum(command[pos + 1])
-            && command[pos + 1] != '_'
+            && !is_placeholder_char(command[pos + 1])
             ) {
         return false;
     }
@@ -131,20 +151,21 @@ bool PlanInfo::isValidNamedPlaceholder(std::size_t pos) const {
     return true;
 }
 
-std::size_t PlanInfo::namedPlaceholderLength(std::size_t pos) const {
+inline std::size_t PlanInfo::namedPlaceholderLength(std::size_t pos) const {
     if (!isValidNamedPlaceholder(pos)) {
         return 0;
     }
 
     auto i = pos + 1;
-    for (; i < command.length() && (isalnum(command[i]) || command[i] == '_'); i++);
+    for (; i < command.length() && (is_alnum(command[i]) || command[i] == '_'); i++);
 
     return i - pos - 1;
 }
 
-std::tuple<std::string, unsigned> PlanInfo::parseNumberedParameters() const {
+std::tuple<std::string, unsigned> __attribute__ ((noinline)) PlanInfo::parseNumberedParameters() const {
     unsigned numParams{0};
-    std::ostringstream rewritten;
+    std::string rewritten;
+    rewritten.reserve(command.size() + (command.size() >> 1));
 
     // Check if the placeholder is valid
     // (should only be preceded and followed by [0-9a-z] and whitespace)
@@ -155,25 +176,28 @@ std::tuple<std::string, unsigned> PlanInfo::parseNumberedParameters() const {
             break;
         }
 
-        rewritten.write(command.data() + lastWrittenPos, pos - lastWrittenPos);
+        rewritten.append(command.data() + lastWrittenPos, pos - lastWrittenPos);
         lastWrittenPos = pos + 1;
 
         if (isValidPlaceholder(pos++)) {
-            rewritten << '$';
-            rewritten << (++numParams);
+            char paramNo[21];
+            paramNo[0] = '\0';
+            auto paramNoStr = conv_10(++numParams, &paramNo[20]);
+            rewritten.append(paramNoStr.start(), paramNoStr.size());
         } else {
-            rewritten << '?';
+            rewritten.push_back('?');
         }
     }
 
-    rewritten.write(command.data() + lastWrittenPos, command.length() - lastWrittenPos);
-    return std::make_tuple(rewritten.str(), numParams);
+    rewritten.append(command.data() + lastWrittenPos, command.length() - lastWrittenPos);
+    return std::make_tuple(rewritten, numParams);
 }
 
 std::tuple<std::string, std::vector<std::string> > PlanInfo::parseNamedParameters() const {
     std::vector<std::string> params;
     std::unordered_map<std::string, unsigned> paramMap;
-    std::ostringstream rewritten;
+    std::string rewritten;
+    rewritten.reserve(command.size() + (command.size() >> 1));
 
     std::size_t pos{0}, lastWrittenPos{0};
     for (;;) {
@@ -182,7 +206,7 @@ std::tuple<std::string, std::vector<std::string> > PlanInfo::parseNamedParameter
             break;
         }
 
-        rewritten.write(command.data() + lastWrittenPos, pos - lastWrittenPos);
+        rewritten.append(command.data() + lastWrittenPos, pos - lastWrittenPos);
         lastWrittenPos = pos + 1;
 
         auto placeholderLength = namedPlaceholderLength(pos++);
@@ -190,25 +214,29 @@ std::tuple<std::string, std::vector<std::string> > PlanInfo::parseNamedParameter
             std::string param = command.substr(pos, placeholderLength);
             auto paramIt = paramMap.find(param);
             if (paramIt != paramMap.end()) {
-                rewritten << '$';
-                rewritten << paramIt->second;
+                char paramNo[21];
+                paramNo[0] = '\0';
+                auto paramNoStr = conv_10(paramIt->second, &paramNo[20]);
+                rewritten.append(paramNoStr.start(), paramNoStr.size());
             } else {
                 params.push_back(param);
                 paramMap.insert(std::make_pair(param, params.size()));
 
-                rewritten << '$';
-                rewritten << params.size();
+                char paramNo[21];
+                paramNo[0] = '\0';
+                auto paramNoStr = conv_10(params.size(), &paramNo[20]);
+                rewritten.append(paramNoStr.start(), paramNoStr.size());
             }
 
             pos += placeholderLength;
             lastWrittenPos += placeholderLength;
         } else {
-            rewritten << ':';
+            rewritten.push_back(':');
         }
     }
 
-    rewritten.write(command.data() + lastWrittenPos, command.length() - lastWrittenPos);
-    return std::make_tuple(rewritten.str(), std::move(params));
+    rewritten.append(command.data() + lastWrittenPos, command.length() - lastWrittenPos);
+    return std::make_tuple(rewritten, std::move(params));
 }
 
 PlanCache::PlanCache(unsigned size)
@@ -581,12 +609,12 @@ Object HHVM_METHOD(PoolHandle, syncQuery, Object const & queryObj) {
     try {
         PlanInfo planInfo(queryData->command().c_str());
         auto bindableParams = planInfo.mapParameters(queryData->params());
-        auto query = new Query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
-        query->setFlags(queryData->flags());
+        Query query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
+        query.setFlags(queryData->flags());
         auto connectionId = poolHandle->pool->assignConnectionId(poolHandle);
         auto connection = poolHandle->pool->connection(connectionId);
         connection->ensureConnected();
-        auto result = query->exec(connection->connection());
+        auto result = query.exec(connection->connection());
         poolHandle->pool->releaseConnection(connectionId);
         return Object{QueryResult::newInstance(std::move(result))};
     } catch (std::exception & e) {
