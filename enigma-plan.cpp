@@ -183,6 +183,7 @@ std::tuple<std::string, unsigned> __attribute__ ((noinline)) PlanInfo::parseNumb
             char paramNo[21];
             paramNo[0] = '\0';
             auto paramNoStr = conv_10(++numParams, &paramNo[20]);
+            rewritten.push_back('$');
             rewritten.append(paramNoStr.start(), paramNoStr.size());
         } else {
             rewritten.push_back('?');
@@ -217,6 +218,7 @@ std::tuple<std::string, std::vector<std::string> > PlanInfo::parseNamedParameter
                 char paramNo[21];
                 paramNo[0] = '\0';
                 auto paramNoStr = conv_10(paramIt->second, &paramNo[20]);
+                rewritten.push_back('$');
                 rewritten.append(paramNoStr.start(), paramNoStr.size());
             } else {
                 params.push_back(param);
@@ -225,6 +227,7 @@ std::tuple<std::string, std::vector<std::string> > PlanInfo::parseNamedParameter
                 char paramNo[21];
                 paramNo[0] = '\0';
                 auto paramNoStr = conv_10(params.size(), &paramNo[20]);
+                rewritten.push_back('$');
                 rewritten.append(paramNoStr.start(), paramNoStr.size());
             }
 

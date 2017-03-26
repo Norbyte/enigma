@@ -370,6 +370,12 @@ Object HHVM_METHOD(PoolHandle, syncQuery, Object const & queryObj) {
             query.setFlags(queryData->flags());
             result = query.exec(connection->connection());
         };
+
+        std::string lastError;
+        if (!connection->isQuerySuccessful(*result.get(), lastError)) {
+            throwEnigmaException(lastError);
+        }
+
         poolHandle->pool->releaseConnection(connectionId);
         return Object{QueryResult::newInstance(std::move(result))};
     } catch (std::exception & e) {

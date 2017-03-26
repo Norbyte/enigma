@@ -160,6 +160,7 @@ public:
     void cancelQuery();
 
     void setStateChangeCallback(StateChangeCallback callback);
+    bool isQuerySuccessful(Pgsql::ResultResource & result, std::string & lastError);
 
     inline bool inTransaction() const {
         return resource_->inTransaction();

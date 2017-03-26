@@ -611,43 +611,40 @@ void Connection::queryCompleted() {
         lastError_ = resource_->errorMessage();
         finishQuery(false, nullptr);
     } else {
-        bool succeeded;
-        switch (result->status()) {
-            case Pgsql::ResultResource::Status::CommandOk:
-            case Pgsql::ResultResource::Status::TuplesOk:
-                succeeded = true;
-                break;
-
-            case Pgsql::ResultResource::Status::CopyIn:
-            case Pgsql::ResultResource::Status::CopyOut:
-                lastError_ = "Row COPY not supported";
-                // Kill off the connection, as we cannot cancel a COPY
-                // command any other way :(
-                markAsDead(lastError_);
-                succeeded = false;
-                break;
-
-            case Pgsql::ResultResource::Status::EmptyQuery:
-                lastError_ = "Empty query";
-                succeeded = false;
-                break;
-
-            case Pgsql::ResultResource::Status::FatalError:
-            case Pgsql::ResultResource::Status::BadResponse:
-                lastError_ = result->errorMessage();
-                if (lastError_.empty()) {
-                    lastError_ = resource_->errorMessage();
-                }
-                succeeded = false;
-                break;
-
-            default:
-                lastError_ = "ResultResource::status() returned unexpected value";
-                succeeded = false;
-                break;
-        }
-
+        bool succeeded = isQuerySuccessful(*result.get(), lastError_);
         finishQuery(succeeded, std::move(result));
+    }
+}
+
+bool Connection::isQuerySuccessful(Pgsql::ResultResource & result, std::string & lastError) {
+    switch (result.status()) {
+        case Pgsql::ResultResource::Status::CommandOk:
+        case Pgsql::ResultResource::Status::TuplesOk:
+            return true;
+
+        case Pgsql::ResultResource::Status::CopyIn:
+        case Pgsql::ResultResource::Status::CopyOut:
+            lastError = "Row COPY not supported";
+            // Kill off the connection, as we cannot cancel a COPY
+            // command any other way :(
+            markAsDead(lastError);
+            return false;
+
+        case Pgsql::ResultResource::Status::EmptyQuery:
+            lastError = "Empty query";
+            return false;
+
+        case Pgsql::ResultResource::Status::FatalError:
+        case Pgsql::ResultResource::Status::BadResponse:
+            lastError = result.errorMessage();
+            if (lastError.empty()) {
+                lastError = resource_->errorMessage();
+            }
+            return false;
+
+        default:
+            lastError = "ResultResource::status() returned unexpected value";
+            return false;
     }
 }
 
