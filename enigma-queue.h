@@ -148,6 +148,7 @@ public:
     PoolHandle & operator = (PoolHandle const &) = delete;
     ~PoolHandle();
 
+    void bindConnection();
     Pgsql::p_ResultResource query(String const & command, Array const & params, unsigned flags);
     QueryAwait * asyncQuery(String const & command, Array const & params, unsigned flags);
 
@@ -161,7 +162,10 @@ public:
 
 private:
     sp_Pool pool_;
+    std::unique_ptr<PoolConnectionHandle> connection_;
     TransactionState transaction_;
+
+    Pgsql::p_ResultResource query(sp_Connection connection, String const & command, Array const & params, unsigned flags);
 };
 
 class HHPoolHandle {

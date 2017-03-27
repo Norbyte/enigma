@@ -287,13 +287,26 @@ PoolHandle::PoolHandle(sp_Pool p)
 PoolHandle::~PoolHandle() {
 }
 
+void PoolHandle::bindConnection() {
+    if (!connection_) {
+        connection_.reset(new PoolConnectionHandle(pool_));
+        connection_->getConnection()->ensureConnected();
+    }
+}
+
 Pgsql::p_ResultResource PoolHandle::query(String const & command, Array const & params, unsigned flags) {
+    if (connection_) {
+        return query(connection_->getConnection(), command, params, flags);
+    } else {
+        PoolConnectionHandle ch(pool_);
+        auto connection = ch.getConnection();
+        connection->ensureConnected();
+        return query(connection, command, params, flags);
+    }
+}
+
+Pgsql::p_ResultResource PoolHandle::query(sp_Connection connection, String const & command, Array const & params, unsigned flags) {
     std::string sql = command.c_str();
-
-    PoolConnectionHandle ch(pool_);
-    auto connection = ch.getConnection();
-    connection->ensureConnected();
-
     Pgsql::p_ResultResource result;
     if (flags & Query::kCachePlan) {
         auto plan = connection->planCache().lookupPlan(sql);
@@ -417,6 +430,17 @@ Object HHVM_METHOD(HHPoolHandle, asyncQuery, Object const & queryObj) {
 }
 
 
+void HHVM_METHOD(HHPoolHandle, bindConnection) {
+    auto poolHandle = Native::data<HHPoolHandle>(this_);
+    if (!poolHandle->handle) {
+        throwEnigmaException(
+                "Pool::bindConnection(): Cannot bind after the pool handle was released");
+    }
+
+    poolHandle->handle->bindConnection();
+}
+
+
 void HHVM_METHOD(HHPoolHandle, release) {
     auto poolHandle = Native::data<HHPoolHandle>(this_);
     if (!poolHandle->handle) {
@@ -465,6 +489,7 @@ void HHVM_METHOD(QueryInterface, setBinary, bool enabled) {
 void registerQueueClasses() {
     ENIGMA_NAMED_ME(HHPoolHandle, Pool, asyncQuery);
     ENIGMA_NAMED_ME(HHPoolHandle, Pool, syncQuery);
+    ENIGMA_NAMED_ME(HHPoolHandle, Pool, bindConnection);
     ENIGMA_NAMED_ME(HHPoolHandle, Pool, release);
     Native::registerNativeDataInfo<HHPoolHandle>(s_PoolHandle.get());
 

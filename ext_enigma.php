@@ -22,6 +22,9 @@ class Query {
 <<__NativeData("PoolHandle")>>
 class Pool {
     <<__Native>>
+    function bindConnection() : void;
+
+    <<__Native>>
     function release() : void;
 
     <<__Native>>
@@ -41,9 +44,6 @@ class ErrorResult extends \Exception {
 
 <<__NativeData("QueryResult")>>
 class QueryResult {
-    <<__Native>>
-    public function test() : void;
-
     <<__Native>>
     public function fetchArrays(int $flags = 0) : array;
 
