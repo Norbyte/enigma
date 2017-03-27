@@ -11,12 +11,12 @@ TransactionLifetimeManager::TransactionLifetimeManager() {}
 TransactionLifetimeManager::~TransactionLifetimeManager() {}
 
 bool TransactionLifetimeManager::enqueue(QueryAwait * event, PoolHandle * handle) {
-    auto & txn = handle->transaction;
+    auto & txn = handle->transaction();
     if (txn.connectionId != Pool::InvalidConnectionId) {
         if (!txn.executing) {
             ENIG_DEBUG("TLM::enqueue(): Begin executing query");
             txn.executing = true;
-            handle->pool->execute(txn.connectionId, event, handle);
+            handle->pool()->execute(txn.connectionId, event, handle);
         } else {
             ENIG_DEBUG("TLM::enqueue(): Add query to local queue");
             bool written = txn.pendingQueries.write(event);
@@ -32,17 +32,18 @@ bool TransactionLifetimeManager::enqueue(QueryAwait * event, PoolHandle * handle
 }
 
 ConnectionId TransactionLifetimeManager::assignConnection(PoolHandle * handle) {
-    return handle->transaction.connectionId;
+    return handle->transaction().connectionId;
 }
 
 
 QueryAwait * TransactionLifetimeManager::assignQuery(ConnectionId cid) {
     auto handle = connections_[cid].handle;
     if (handle) {
-        always_assert(!handle->transaction.executing);
-        always_assert(handle->transaction.connectionId == cid);
+        auto & txn = handle->transaction();
+        always_assert(!txn.executing);
+        always_assert(txn.connectionId == cid);
         QueryAwait * query;
-        if (handle->transaction.pendingQueries.read(query)) {
+        if (txn.pendingQueries.read(query)) {
             ENIG_DEBUG("TLM::assignQuery(): Assign query from queue");
             return query;
         }
@@ -53,10 +54,11 @@ QueryAwait * TransactionLifetimeManager::assignQuery(ConnectionId cid) {
 
 
 bool TransactionLifetimeManager::notifyFinishAssignment(PoolHandle * handle, ConnectionId cid) {
-    auto connection = handle->pool->connection(cid);
-    bool assigned = (handle->transaction.connectionId != Pool::InvalidConnectionId);
+    auto connection = handle->pool()->connection(cid);
+    auto & txn = handle->transaction();
+    bool assigned = (txn.connectionId != Pool::InvalidConnectionId);
     bool inTransaction = connection->inTransaction();
-    handle->transaction.executing = false;
+    txn.executing = false;
 
     if (inTransaction && !assigned) {
         ENIG_DEBUG("TLM::notifyFinishAssignment(): Connection assigned to handle");
@@ -75,13 +77,13 @@ void TransactionLifetimeManager::notifyHandleCreated(PoolHandle * handle) {
 
 
 void TransactionLifetimeManager::notifyHandleReleased(PoolHandle * handle) {
-    auto cid = handle->transaction.connectionId;
+    auto cid = handle->transaction().connectionId;
     if (cid != Pool::InvalidConnectionId) {
         ENIG_DEBUG("TLM::notifyHandleReleased(): Drop transaction");
         finishTransaction(cid, handle);
-        auto connection = handle->pool->connection(cid);
+        auto connection = handle->pool()->connection(cid);
         if (!connection->inTransaction()) {
-            handle->pool->releaseConnection(cid);
+            handle->pool()->releaseConnection(cid);
         }
     }
 }
@@ -98,28 +100,30 @@ void TransactionLifetimeManager::notifyConnectionRemoved(ConnectionId cid) {
 
 
 void TransactionLifetimeManager::beginTransaction(ConnectionId cid, PoolHandle * handle) {
-    always_assert(handle->transaction.connectionId == Pool::InvalidConnectionId);
+    auto & txn = handle->transaction();
+    always_assert(txn.connectionId == Pool::InvalidConnectionId);
     connections_[cid].handle = handle;
-    handle->transaction.connectionId = cid;
+    txn.connectionId = cid;
 }
 
 
 void TransactionLifetimeManager::finishTransaction(ConnectionId cid, PoolHandle * handle) {
+    auto & txn = handle->transaction();
     connections_[cid].handle = nullptr;
-    handle->transaction.connectionId = Pool::InvalidConnectionId;
+    txn.connectionId = Pool::InvalidConnectionId;
 
     // Move queries that were queued after COMMIT/ROLLBACK/sweep to the shared queue
     QueryAwait * event;
-    while (handle->transaction.pendingQueries.read(event)) {
-        handle->pool->enqueue(event, handle);
+    while (txn.pendingQueries.read(event)) {
+        handle->pool()->enqueue(event, handle);
     }
 
-    auto connection = handle->pool->connection(cid);
+    auto connection = handle->pool()->connection(cid);
     if (connection->inTransaction()) {
-        if (handle->transaction.executing) {
+        if (txn.executing) {
             connections_[cid].rollingBack = true;
         } else {
-            rollback(cid, connection, handle->pool);
+            rollback(cid, connection, handle->pool());
         }
     }
 }

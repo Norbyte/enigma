@@ -117,7 +117,11 @@ void Pool::releaseHandle(PoolHandle * handle) {
 }
 
 ConnectionId Pool::assignConnectionId(PoolHandle * handle) {
-    ConnectionId connectionId = transactionLifetimeManager_->assignConnection(handle);
+    ConnectionId connectionId = InvalidConnectionId;
+    if (handle != nullptr) {
+        connectionId = transactionLifetimeManager_->assignConnection(handle);
+    }
+
     if (connectionId != InvalidConnectionId) {
         return connectionId;
     }
@@ -261,70 +265,114 @@ TransactionState::TransactionState()
 {}
 
 
+PoolConnectionHandle::PoolConnectionHandle(sp_Pool pool)
+    : pool_(pool), connectionId_(pool->assignConnectionId(nullptr)) {
+}
+
+PoolConnectionHandle::~PoolConnectionHandle() {
+    pool_->releaseConnection(connectionId_);
+}
+
+sp_Connection PoolConnectionHandle::getConnection() const {
+    return pool_->connection(connectionId_);
+}
+
+
+
+PoolHandle::PoolHandle(sp_Pool p)
+        : pool_(p) {
+    p->createHandle(this);
+}
+
+PoolHandle::~PoolHandle() {
+}
+
+Pgsql::p_ResultResource PoolHandle::query(String const & command, Array const & params, unsigned flags) {
+    std::string sql = command.c_str();
+
+    PoolConnectionHandle ch(pool_);
+    auto connection = ch.getConnection();
+    connection->ensureConnected();
+
+    Pgsql::p_ResultResource result;
+    if (flags & Query::kCachePlan) {
+        auto plan = connection->planCache().lookupPlan(sql);
+        if (plan == nullptr) {
+            plan = connection->planCache().assignPlan(sql);
+            if (plan != nullptr) {
+                try {
+                    Query query(Query::PrepareInit {}, plan->statementName, plan->planInfo.rewrittenCommand,
+                            plan->planInfo.parameterCount);
+                    query.exec(connection->connection());
+                } catch (...) {
+                    connection->planCache().forgetPlan(sql);
+                    throw;
+                }
+            }
+        }
+
+        if (plan != nullptr) {
+            auto bindableParams = plan->planInfo.mapParameters(params);
+            Query query(Query::PreparedInit{}, plan->statementName, bindableParams);
+            query.setFlags(flags);
+            result = query.exec(connection->connection());
+        }
+    }
+
+    if (!result) {
+        PlanInfo planInfo(sql);
+        auto bindableParams = planInfo.mapParameters(params);
+        Query query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
+        query.setFlags(flags);
+        result = query.exec(connection->connection());
+    };
+
+    std::string lastError;
+    if (!connection->isQuerySuccessful(*result.get(), lastError)) {
+        throwEnigmaException(lastError);
+    }
+
+    return result;
+}
+
+QueryAwait * PoolHandle::asyncQuery(String const & command, Array const & params, unsigned flags) {
+    PlanInfo planInfo(command.c_str());
+    auto bindableParams = planInfo.mapParameters(params);
+    auto query = new Query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
+    query->setFlags(flags);
+    return pool_->enqueue(p_Query(query), this);
+}
+
+
+
 const StaticString s_PoolHandle("PoolHandle"),
         s_PoolHandleNS("Enigma\\Pool"),
         s_QueryInterface("QueryInterface"),
         s_QueryInterfaceNS("Enigma\\Query");
 
-Object PoolHandle::newInstance(sp_Pool p) {
+Object HHPoolHandle::newInstance(sp_Pool p) {
     Object instance{Unit::lookupClass(s_PoolHandleNS.get())};
-    Native::data<PoolHandle>(instance)
+    Native::data<HHPoolHandle>(instance)
             ->init(p);
     return instance;
 }
 
-PoolHandle::~PoolHandle() {
+HHPoolHandle::~HHPoolHandle() {
     sweep();
 }
 
-void PoolHandle::init(sp_Pool p) {
-    pool = p;
-    p->createHandle(this);
+void HHPoolHandle::init(sp_Pool p) {
+    handle.reset(new PoolHandle(p));
 }
 
-void PoolHandle::sweep() {
-    ENIG_DEBUG("PoolHandle::sweep()");
-    if (pool) {
-        pool->releaseHandle(this);
-    }
-
-    always_assert(runningQueries == 0);
-    pool.reset();
+void HHPoolHandle::sweep() {
+    ENIG_DEBUG("HHPoolHandle::sweep()");
+    handle.reset();
 }
 
-
-Object HHVM_METHOD(PoolHandle, query, Object const & queryObj) {
-    auto poolHandle = Native::data<PoolHandle>(this_);
-    if (!poolHandle->pool) {
-        throwEnigmaException(
-                "Pool::query(): Cannot execute a query after the pool handle was released");
-    }
-
-    auto queryClass = Unit::lookupClass(s_QueryInterfaceNS.get());
-    if (!queryObj.instanceof(queryClass)) {
-        SystemLib::throwInvalidArgumentExceptionObject(
-                "Pool::query() expects a Query object as its parameter");
-    }
-
-    auto queryData = Native::data<QueryInterface>(queryObj);
-
-    try {
-        PlanInfo planInfo(queryData->command().c_str());
-        auto bindableParams = planInfo.mapParameters(queryData->params());
-        auto query = new Query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
-        query->setFlags(queryData->flags());
-        auto waitEvent = poolHandle->pool->enqueue(p_Query(query), poolHandle);
-
-        return Object{waitEvent->getWaitHandle()};
-    } catch (std::exception & e) {
-        throwEnigmaException(e.what());
-    }
-}
-
-
-Object HHVM_METHOD(PoolHandle, syncQuery, Object const & queryObj) {
-    auto poolHandle = Native::data<PoolHandle>(this_);
-    if (!poolHandle->pool) {
+Object HHVM_METHOD(HHPoolHandle, syncQuery, Object const & queryObj) {
+    auto poolHandle = Native::data<HHPoolHandle>(this_);
+    if (!poolHandle->handle) {
         throwEnigmaException(
                 "Pool::syncQuery(): Cannot execute a query after the pool handle was released");
     }
@@ -338,58 +386,42 @@ Object HHVM_METHOD(PoolHandle, syncQuery, Object const & queryObj) {
     auto queryData = Native::data<QueryInterface>(queryObj);
 
     try {
-        std::string sql = queryData->command().c_str();
-        auto connectionId = poolHandle->pool->assignConnectionId(poolHandle);
-        auto connection = poolHandle->pool->connection(connectionId);
-        connection->ensureConnected();
-
-        Pgsql::p_ResultResource result;
-        if (queryData->flags() & Query::kCachePlan) {
-            auto plan = connection->planCache().lookupPlan(sql);
-            if (plan == nullptr) {
-                plan = connection->planCache().assignPlan(sql);
-                if (plan != nullptr) {
-                    Query query(Query::PrepareInit{}, plan->statementName, plan->planInfo.rewrittenCommand,
-                            plan->planInfo.parameterCount);
-                    query.exec(connection->connection());
-                }
-            }
-
-            if (plan != nullptr) {
-                auto bindableParams = plan->planInfo.mapParameters(queryData->params());
-                Query query(Query::PreparedInit{}, plan->statementName, bindableParams);
-                query.setFlags(queryData->flags());
-                result = query.exec(connection->connection());
-            }
-        }
-
-        if (!result) {
-            PlanInfo planInfo(sql);
-            auto bindableParams = planInfo.mapParameters(queryData->params());
-            Query query(Query::ParameterizedInit{}, planInfo.rewrittenCommand, bindableParams);
-            query.setFlags(queryData->flags());
-            result = query.exec(connection->connection());
-        };
-
-        std::string lastError;
-        if (!connection->isQuerySuccessful(*result.get(), lastError)) {
-            throwEnigmaException(lastError);
-        }
-
-        poolHandle->pool->releaseConnection(connectionId);
+        auto result = poolHandle->handle->query(queryData->command(), queryData->params(), queryData->flags());
         return Object{QueryResult::newInstance(std::move(result))};
     } catch (std::exception & e) {
-        // TODO: release connection ID on exception! --> ConnectionHandle?
+        throwEnigmaException(e.what());
+    }
+}
+
+Object HHVM_METHOD(HHPoolHandle, asyncQuery, Object const & queryObj) {
+    auto poolHandle = Native::data<HHPoolHandle>(this_);
+    if (!poolHandle->handle) {
+        throwEnigmaException(
+                "Pool::asyncQuery(): Cannot execute a query after the pool handle was released");
+    }
+
+    auto queryClass = Unit::lookupClass(s_QueryInterfaceNS.get());
+    if (!queryObj.instanceof(queryClass)) {
+        SystemLib::throwInvalidArgumentExceptionObject(
+                "Pool::asyncQuery() expects a Query object as its parameter");
+    }
+
+    auto queryData = Native::data<QueryInterface>(queryObj);
+
+    try {
+        auto waitEvent = poolHandle->handle->asyncQuery(queryData->command(), queryData->params(), queryData->flags());
+        return Object{waitEvent->getWaitHandle()};
+    } catch (std::exception & e) {
         throwEnigmaException(e.what());
     }
 }
 
 
-void HHVM_METHOD(PoolHandle, release) {
-    auto poolHandle = Native::data<PoolHandle>(this_);
-    if (!poolHandle->pool) {
+void HHVM_METHOD(HHPoolHandle, release) {
+    auto poolHandle = Native::data<HHPoolHandle>(this_);
+    if (!poolHandle->handle) {
         throwEnigmaException(
-                "Pool::release(): Cannot release a pool handle multiple times");
+                "Pool::release(): Pool handle already released");
     }
 
     poolHandle->sweep();
@@ -431,10 +463,10 @@ void HHVM_METHOD(QueryInterface, setBinary, bool enabled) {
 
 
 void registerQueueClasses() {
-    ENIGMA_NAMED_ME(PoolHandle, Pool, query);
-    ENIGMA_NAMED_ME(PoolHandle, Pool, syncQuery);
-    ENIGMA_NAMED_ME(PoolHandle, Pool, release);
-    Native::registerNativeDataInfo<PoolHandle>(s_PoolHandle.get());
+    ENIGMA_NAMED_ME(HHPoolHandle, Pool, asyncQuery);
+    ENIGMA_NAMED_ME(HHPoolHandle, Pool, syncQuery);
+    ENIGMA_NAMED_ME(HHPoolHandle, Pool, release);
+    Native::registerNativeDataInfo<HHPoolHandle>(s_PoolHandle.get());
 
     ENIGMA_NAMED_ME(QueryInterface, Query, __construct);
     ENIGMA_NAMED_ME(QueryInterface, Query, enablePlanCache);

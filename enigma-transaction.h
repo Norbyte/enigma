@@ -4,6 +4,7 @@
 #include "hphp/runtime/ext/extension.h"
 #include "enigma-common.h"
 #include "enigma-query.h"
+#include "enigma-async.h"
 #include "enigma-queue.h"
 
 namespace HPHP {

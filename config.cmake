@@ -13,7 +13,7 @@ include_directories(${PGSQL_INCLUDE_DIR})
 
 # add_definitions(-DENIGMA_DEBUG)
 
-HHVM_EXTENSION(enigma ext_enigma.cpp pgsql-connection.cpp pgsql-result.cpp enigma-plan.cpp enigma-query.cpp enigma-queue.cpp enigma-transaction.cpp)
+HHVM_EXTENSION(enigma ext_enigma.cpp pgsql-connection.cpp pgsql-result.cpp enigma-plan.cpp enigma-query.cpp enigma-async.cpp enigma-queue.cpp enigma-transaction.cpp)
 HHVM_SYSTEMLIB(enigma ext_enigma.php)
 
 target_link_libraries(enigma ${PGSQL_LIBRARY})

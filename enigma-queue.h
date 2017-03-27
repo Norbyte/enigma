@@ -7,6 +7,7 @@
 #include <folly/EvictingCacheMap.h>
 #include "enigma-common.h"
 #include "enigma-query.h"
+#include "enigma-async.h"
 #include "enigma-plan.h"
 
 namespace HPHP {
@@ -126,17 +127,50 @@ struct TransactionState {
     folly::ProducerConsumerQueue<QueryAwait *> pendingQueries;
 };
 
+class PoolConnectionHandle {
+public:
+    PoolConnectionHandle(sp_Pool pool);
+    PoolConnectionHandle(PoolConnectionHandle const &) = delete;
+    PoolConnectionHandle & operator = (PoolConnectionHandle const &) = delete;
+    ~PoolConnectionHandle();
+
+    sp_Connection getConnection() const;
+
+private:
+    sp_Pool pool_;
+    unsigned connectionId_;
+};
+
 class PoolHandle {
 public:
-    static Object newInstance(sp_Pool p);
-
+    PoolHandle(sp_Pool pool);
+    PoolHandle(PoolHandle const &) = delete;
+    PoolHandle & operator = (PoolHandle const &) = delete;
     ~PoolHandle();
 
+    Pgsql::p_ResultResource query(String const & command, Array const & params, unsigned flags);
+    QueryAwait * asyncQuery(String const & command, Array const & params, unsigned flags);
+
+    inline sp_Pool pool() const {
+        return pool_;
+    }
+
+    inline TransactionState & transaction() {
+        return transaction_;
+    }
+
+private:
+    sp_Pool pool_;
+    TransactionState transaction_;
+};
+
+class HHPoolHandle {
+public:
+    static Object newInstance(sp_Pool p);
+    ~HHPoolHandle();
     void sweep();
 
-    sp_Pool pool;
-    std::atomic<unsigned> runningQueries {0};
-    TransactionState transaction;
+    std::unique_ptr<PoolHandle> handle;
 
 private:
     void init(sp_Pool p);

@@ -1,7 +1,7 @@
 #include "hphp/runtime/ext/extension.h"
+#include "hphp/runtime/vm/native-data.h"
 #include "enigma-query.h"
 #include "enigma-queue.h"
-#include "hphp/runtime/vm/native-data.h"
 
 namespace HPHP {
 
@@ -21,10 +21,10 @@ namespace HPHP {
         Object poolHandle;
         if (persistent) {
             auto pool = s_pools.make(connectionOpts, poolOpts);
-            poolHandle = Enigma::PoolHandle::newInstance(pool);
+            poolHandle = Enigma::HHPoolHandle::newInstance(pool);
         } else {
             auto pool = std::make_shared<Enigma::Pool>(connectionOpts, poolOpts);
-            poolHandle = Enigma::PoolHandle::newInstance(pool);
+            poolHandle = Enigma::HHPoolHandle::newInstance(pool);
         }
 
         return poolHandle;

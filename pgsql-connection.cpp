@@ -356,10 +356,15 @@ bool ConnectionResource::flush() {
 
 void ConnectionResource::cancel() {
     char errbuf[256];
+    errbuf[0] = '\0';
     auto cancel = PQgetCancel(connection_);
-    ENIG_DEBUG("PQcancel()");
-    bool canceled = PQcancel(cancel, errbuf, sizeof(errbuf)) == 1;
-    PQfreeCancel(cancel);
+    bool canceled = false;
+    if (cancel != nullptr) {
+        ENIG_DEBUG("PQcancel()");
+        canceled = (PQcancel(cancel, errbuf, sizeof(errbuf)) == 1);
+        PQfreeCancel(cancel);
+    }
+
     if (!canceled) {
         throw EnigmaException(std::string("Failed to cancel query: ") + errbuf);
     }

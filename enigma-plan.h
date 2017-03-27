@@ -65,6 +65,7 @@ public:
 
     CachedPlan const * lookupPlan(std::string const & query);
     CachedPlan const * assignPlan(std::string const & query);
+    void forgetPlan(std::string const & query);
     void clear();
 
 private:

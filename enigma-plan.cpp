@@ -264,6 +264,10 @@ PlanCache::CachedPlan const * PlanCache::assignPlan(std::string const & query) {
     return storePlan(query, name);
 }
 
+void PlanCache::forgetPlan(std::string const & query) {
+    plans_.erase(query);
+}
+
 PlanCache::CachedPlan const * PlanCache::storePlan(std::string const & query, std::string const & statementName) {
     auto plan = p_CachedPlan(new CachedPlan(query));
     auto planPtr = plan.get();
