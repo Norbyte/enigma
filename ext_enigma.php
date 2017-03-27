@@ -28,7 +28,7 @@ class Pool {
     function release() : void;
 
     <<__Native>>
-    function query(Query $query) : Awaitable<QueryResult>;
+    function asyncQuery(Query $query) : Awaitable<QueryResult>;
 
     <<__Native>>
     function syncQuery(Query $query) : QueryResult;

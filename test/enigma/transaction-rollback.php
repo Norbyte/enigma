@@ -13,7 +13,7 @@ $pool->release();
 $pool2 = Enigma\create_pool($connectionOptions, $poolOptions);
 try {
     $query = new Enigma\Query('select x');
-    $resultset = \HH\Asio\join($pool2->query($query));
+    $resultset = \HH\Asio\join($pool2->asyncQuery($query));
 } catch (Exception $e) {}
 
 // This will throw if there is a transaction in progress

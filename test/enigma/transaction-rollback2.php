@@ -10,12 +10,12 @@ $pid0 = get_pg_pid($pool);
 
 $pool2 = Enigma\create_pool($connectionOptions, $poolOptions);
 $query = new Enigma\Query('begin');
-\HH\Asio\join($pool2->query($query));
+\HH\Asio\join($pool2->asyncQuery($query));
 $pid1 = get_pg_pid($pool2);
 
 query('rollback');
 $query = new Enigma\Query('rollback');
-\HH\Asio\join($pool2->query($query));
+\HH\Asio\join($pool2->asyncQuery($query));
 
 $pids = [$pid0 => 0, $pid1 => 0];
 for ($i = 0; $i < 30; $i++) {
