@@ -93,7 +93,7 @@ private:
     p_AssignmentManager transactionLifetimeManager_;
     // TODO: p_AssignmentManager assignmentManager_;
 
-    void addConnection(Array const & options);
+    void addConnection(Pgsql::ConnectionOptions const & options);
     void removeConnection(ConnectionId connectionId);
     void tryExecuteNext();
     void queryCompleted(ConnectionId connectionId, PoolHandle * handle);

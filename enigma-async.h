@@ -26,7 +26,7 @@ public:
     typedef std::function<void(bool, Pgsql::ResultResource *, std::string)> QueryCompletionCallback;
     typedef std::function<void(Connection &, State)> StateChangeCallback;
 
-    Connection(Array const & options, unsigned planCacheSize);
+    Connection(Pgsql::ConnectionOptions const & options, unsigned planCacheSize);
 
     void ensureConnected();
     void beginReset();
@@ -74,7 +74,7 @@ protected:
     void socketReady(bool read, bool write);
 
 private:
-    Array options_;
+    Pgsql::ConnectionOptions options_;
     std::unique_ptr<Pgsql::ConnectionResource> resource_{ nullptr };
     State state_{ State::Dead };
     bool writing_{ true };

@@ -45,15 +45,21 @@ Pool::Pool(Array const & connectionOpts, Array const & poolOpts)
         planCacheSize_ = size;
     }
 
+    Pgsql::ConnectionOptions pgsqlOpts;
+    for (ArrayIter iter(connectionOpts); iter; ++iter) {
+        pgsqlOpts.insert(std::make_pair(
+                iter.first().toString().toCppString(), iter.second().toString().toCppString()));
+    }
+
     for (unsigned i = 0; i < poolSize_; i++) {
-        addConnection(connectionOpts);
+        addConnection(pgsqlOpts);
     }
 }
 
 Pool::~Pool() {
 }
 
-void Pool::addConnection(Array const & options) {
+void Pool::addConnection(Pgsql::ConnectionOptions const & options) {
     auto connection = std::make_shared<Connection>(options, planCacheSize_);
     auto connectionId = nextConnectionIndex_++;
     connectionMap_.insert(std::make_pair(connectionId, connection));

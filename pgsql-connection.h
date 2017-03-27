@@ -42,6 +42,8 @@ enum class ConnectionInit {
     InitSync
 };
 
+typedef std::map<std::string, std::string> ConnectionOptions;
+
 class ConnectionResource {
 public:
     enum class PollingStatus {
@@ -65,7 +67,7 @@ public:
         Unknown        // reported if the connection is bad
     };
 
-    ConnectionResource(Array params, ConnectionInit initType);
+    ConnectionResource(ConnectionOptions const & params, ConnectionInit initType);
 
     ~ConnectionResource();
 
@@ -211,7 +213,7 @@ private:
     void arrayToStringList(Array const & values, req::vector<String> & strings, req::vector<const char *> & ptrs,
                            bool allowNulls = false);
 
-    void beginConnection(Array const & params, ConnectionInit initType);
+    void beginConnection(ConnectionOptions const & params, ConnectionInit initType);
 };
 
 }

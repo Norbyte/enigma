@@ -44,7 +44,7 @@ PreparedParameters::PreparedParameters(Array const & params)
 }
 
 
-ConnectionResource::ConnectionResource(Array params, ConnectionInit initType) {
+ConnectionResource::ConnectionResource(ConnectionOptions const & params, ConnectionInit initType) {
     beginConnection(params, initType);
 }
 
@@ -387,17 +387,17 @@ void ConnectionResource::arrayToStringList(Array const & values, req::vector<Str
     }
 }
 
-void ConnectionResource::beginConnection(Array const & params, ConnectionInit initType) {
-    ssize_t n_params = params.length();
-    req::vector<String> keys(n_params), values(n_params);
+void ConnectionResource::beginConnection(ConnectionOptions const & params, ConnectionInit initType) {
+    ssize_t n_params = params.size();
+    req::vector<std::string> keys(n_params), values(n_params);
     req::vector<const char *> pg_keys(n_params + 1), pg_values(n_params + 1);
 
     unsigned i = 0;
-    for (ArrayIter iter(params); iter; ++iter, ++i) {
-        keys[i] = iter.first().toString();
+    for (auto it = params.begin(); it != params.end(); ++it, ++i) {
+        keys[i] = it->first;
         pg_keys[i] = keys[i].c_str();
 
-        values[i] = iter.second().toString();
+        values[i] = it->second;
         pg_values[i] = values[i].c_str();
     }
 

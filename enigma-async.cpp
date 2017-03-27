@@ -178,7 +178,7 @@ void QueryAwait::fdChanged() {
 
 
 
-Connection::Connection(Array const & options, unsigned planCacheSize)
+Connection::Connection(Pgsql::ConnectionOptions const & options, unsigned planCacheSize)
         : options_(options), planCache_(planCacheSize)
 {}
 
