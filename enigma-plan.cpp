@@ -71,6 +71,7 @@ void PlanInfo::determineParameterType() {
         type = ParameterType::Named;
         rewrittenCommand = std::move(std::get<0>(named));
         parameterNameMap = std::move(std::get<1>(named));
+        parameterCount = parameterNameMap.size();
     } else {
         type = ParameterType::Numbered;
         rewrittenCommand = std::move(std::get<0>(numbered));
